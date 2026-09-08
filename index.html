@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="icon" href="data:,">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>电路仿真系统 - Phase 0</title>
+</head>
+<body>
+  <div id="app" style="font-family: sans-serif; padding: 20px;">
+    <h1>⚡ 电路仿真系统</h1>
+    <p>Phase 0 骨架已启动。</p>
+    <p>打开开发者工具查看控制台输出。</p>
+    <button id="testBtn" style="padding: 8px 16px; font-size: 16px;">手动测试加载</button>
+  </div>
+  <!-- 关键：指向 src/main.ts -->
+  <script type="module" src="/src/main.ts"></script>
+  <script>
+    document.getElementById('testBtn').addEventListener('click', () => {
+      window.testLoadComps();
+    });
+  </script>
+</body>
+</html>
