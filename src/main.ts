@@ -1,6 +1,6 @@
 import { ComponentLoader } from './loader/ComponentLoader';
 
-console.log('🚀 电路仿真系统启动');
+console.log('🚀 Phase 0: 电路仿真系统启动');
 
 // 创建加载器实例
 const loader = new ComponentLoader();

@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <link rel="icon" href="data:,">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>电路仿真系统 - Phase 0</title>
 </head>
+
 <body>
   <div id="app" style="font-family: sans-serif; padding: 20px;">
     <h1>⚡ 电路仿真系统</h1>
@@ -17,8 +19,9 @@
   <script type="module" src="/src/main.ts"></script>
   <script>
     document.getElementById('testBtn').addEventListener('click', () => {
-      window.testLoadComps();
+      console.log('📋 当前注册表:', window.__loader?.getAllTypes() || '未加载');
     });
   </script>
 </body>
+
 </html>
