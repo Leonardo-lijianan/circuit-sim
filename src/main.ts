@@ -3,13 +3,14 @@
 import { ComponentLoader } from './loader/ComponentLoader';
 import { CanvasManager } from './renderer/CanvasManager';
 import { CircuitRenderer } from './renderer/CircuitRenderer';
+import { CircuitManager } from './manager/CircuitManager';  // phase3新增 CircuitManager
 import { PanelManager } from './ui/PanelManager';
 import { ToolbarManager } from './ui/ToolbarManager';
 import { StatusBarManager } from './ui/StatusBarManager';
 import { KeyboardManager } from './io/KeyboardManager';
 import { InteractionManager } from './interaction/InteractionManager';
 import { defaultViewport, screenToLogic } from './utils/coordinates';
-import type { Circuit, ComponentInstance, Wire } from './types';
+import type { Circuit } from './types';
 
 console.log('🚀 Phase 0: 电路仿真系统启动');
 
@@ -39,10 +40,16 @@ console.log(`📐 Canvas 尺寸: ${canvasManager.getSize().width} × ${canvasMan
 const interaction = new InteractionManager();
 
 // ============================================================
-// 4. UI 管理器
+// 4. 数据管理 (Phase 3 新增)
 // ============================================================
 
-/* const _toolbar = */ new ToolbarManager(interaction);      // 自动绑定模式按钮
+const circuitManager = new CircuitManager(loader);
+
+// ============================================================
+// 5. UI 管理器 (Phase 2 新增, Phase 3 后由 CircuitManager 管理)
+// ============================================================
+
+/* const toolbar = */ new ToolbarManager(interaction);      // 自动绑定模式按钮
 /* const keyboard = */ new KeyboardManager(interaction);    // 自动绑定快捷键
 // const panel = new PanelManager(loader); // phase2新增 创建面板管理器
 const statusBar = new StatusBarManager();
@@ -54,57 +61,45 @@ const statusBar = new StatusBarManager();
 const renderer = new CircuitRenderer(ctx, loader, viewport);
 
 // ============================================================
-// 6. 构造测试电路 （Phase 3 后由 CircuitManager 管理）
+// 6. 构造测试电路 （Phase 3: 改用 CircuitManager 管理）
 // ============================================================
 
-const testComponents: ComponentInstance[] = [
-  {
-    id: 1,
-    type: 'led',
-    x: 200,
-    y: 200,
-    w: 60,
-    h: 40,
-    params: { forward_voltage: 1.8 },
-    state: 'off',
-  },
-  {
-    id: 2,
-    type: 'resistor',
-    x: 400,
-    y: 200,
-    w: 60,
-    h: 40,
-    params: { resistance: 1000 },
-    state: 'default',
-  },
-];
-
-const testWires: Wire[] = [
-  {
-    id: 1,
-    startComponentId: 1,
-    startPinId: 'k',
-    endComponentId: 2,
-    endPinId: 'p1',
-  },
-];
-
-const testCircuit: Circuit = {
-  components: testComponents,
-  wires: testWires,
-};
-
-// ============================================================
-// 7. 渲染
-// ============================================================
-
-function render() {
-  const { width, height } = canvasManager.getSize();
-  renderer.render(testCircuit, width, height);
+// LED
+const led = circuitManager.addComponent('led', 200, 200);
+if (led) {
+  led.params.forward_voltage = 1.8;
+  led.state = 'off';
+}
+// 电阻
+const resistor = circuitManager.addComponent('resistor', 400, 200);
+if (resistor) {
+  resistor.params.resistance = 1000;
+  resistor.state = 'default';
+}
+// 连线
+if (led && resistor) {
+  circuitManager.addWire(
+    { componentId: led.id, pinId: 'k' },
+    { componentId: resistor.id, pinId: 'p1' }
+  );
 }
 
-render();
+// ============================================================
+// 7. 渲染 （Phase 3更新：由 CircuitManager 管理）
+// ============================================================
+
+// 注册更新回调：数据变化时自动重绘  更新状态栏
+circuitManager.onUpdate((circuit: Circuit) => {
+  const { width, height } = canvasManager.getSize();
+  renderer.render(circuit, width, height);
+  statusBar.updateCircuitStats(circuit);
+});
+
+// 首次渲染（手动触发一次）
+const { width, height } = canvasManager.getSize();
+renderer.render(circuitManager.getCircuit(), width, height);
+statusBar.updateCircuitStats(circuitManager.getCircuit());
+
 
 /**
  * ★ 关键修复：注册 resize 回调，窗口变化时自动重绘,不然画布尺寸变化后不会自动重绘，导致显示异常。
@@ -113,7 +108,12 @@ render();
  * 便于在销毁时调用 off(render) 精准清除；
  * 当前 render 无参数且不依赖 this，故安全性等同箭头函数。
  */
-canvasManager.onResize(render);
+canvasManager.onResize(() => {
+  const { width, height } = canvasManager.getSize();
+  const circuit = circuitManager.getCircuit();
+  renderer.render(circuit, width, height);
+  statusBar.updateCircuitStats(circuit);
+});
 
 // ============================================================
 // 8. 鼠标坐标 → 状态栏
@@ -130,18 +130,23 @@ canvas.addEventListener('mousemove', (event) => {
 
 let ledOn = false;
 (window as any).__toggleLED = () => {
-  const led = testComponents.find(c => c.type === 'led');
+  const comps = circuitManager.getComponents();
+  const led = comps.find(c => c.type === 'led');
   if (!led) return;
   ledOn = !ledOn;
   led.state = ledOn ? 'on' : 'off';
   console.log(`💡 LED 状态: ${led.state}`);
-  render();
+  circuitManager.forceUpdate();  // 触发重绘
 };
 
-(window as any).__circuit = testCircuit;
+(window as any).__circuit = circuitManager.getCircuit();
 (window as any).__loader = loader;
 (window as any).__renderer = renderer;
 (window as any).__interaction = interaction;
+// 这个有selectComponent、getSelectedId()、getSelected()、
+// getWiresForComponent()、addComponent()、removeComponent()、
+// moveComponent()、addWire()、removeWire()、updateParam() 等方法
+(window as any).__manager = circuitManager;
 
-console.log('✅ phase 2: 系统就绪');
+console.log('✅ Phase 2-新增&Phase 3-改用 CircuitManager 管理 : 系统就绪');
 console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');

@@ -191,7 +191,7 @@ export interface FlexUnitCache {
   offsetY: number;
 }
 
-// src/types.ts
+// Phase 2 + Phase 3 相关类型
 
 // ===== 交互模式 =====
 export type Mode = 'select' | 'place' | 'wire' | 'pan';
