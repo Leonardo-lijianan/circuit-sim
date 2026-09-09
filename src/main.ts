@@ -10,6 +10,7 @@ import { StatusBarManager } from './ui/StatusBarManager';
 import { KeyboardManager } from './io/KeyboardManager';
 import { InteractionManager } from './interaction/InteractionManager';
 import { defaultViewport, screenToLogic } from './utils/coordinates';
+import { hitTestCircle, hitTestRect, hitTestSnap, hitTest } from './utils/hitTest';
 import type { Circuit } from './types';
 
 console.log('🚀 Phase 0: 电路仿真系统启动');
@@ -51,7 +52,7 @@ const circuitManager = new CircuitManager(loader);
 
 /* const toolbar = */ new ToolbarManager(interaction);      // 自动绑定模式按钮
 /* const keyboard = */ new KeyboardManager(interaction);    // 自动绑定快捷键
-// const panel = new PanelManager(loader); // phase2新增 创建面板管理器
+/* const panel = */ new PanelManager(loader); // phase2新增 创建面板管理器
 const statusBar = new StatusBarManager();
 
 // ============================================================
@@ -147,6 +148,12 @@ let ledOn = false;
 // getWiresForComponent()、addComponent()、removeComponent()、
 // moveComponent()、addWire()、removeWire()、updateParam() 等方法
 (window as any).__manager = circuitManager;
+// Phase 3 Task 3.3（碰撞检测）新增
+(window as any).__hitTestCircle = hitTestCircle;
+(window as any).__hitTestRect = hitTestRect;
+(window as any).__hitTestSnap = hitTestSnap;
+(window as any).__hitTest = hitTest;
 
-console.log('✅ Phase 2-新增&Phase 3-改用 CircuitManager 管理 : 系统就绪');
+// Phase 2-新增&Phase 3-改用 CircuitManager 管理
+console.log('✅ 系统就绪：当前进度： Phase 3 Task 3.3（碰撞检测）');
 console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');
