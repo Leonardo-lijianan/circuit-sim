@@ -16,8 +16,8 @@
         "title": "circuit-sim",
         "width": 900,
         "height": 675,
-        "minWidth": 860,
-        "minHeight": 520,
+        "minWidth": 870,
+        "minHeight": 652.5,
         "center": true
       }
     ],

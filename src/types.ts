@@ -190,3 +190,20 @@ export interface FlexUnitCache {
   offsetX: number;
   offsetY: number;
 }
+
+// src/types.ts
+
+// ===== 交互模式 =====
+export type Mode = 'select' | 'place' | 'wire' | 'pan';
+
+// ===== 引脚引用 =====
+export interface PinRef {
+  componentId: number;
+  pinId: string;
+}
+
+// ===== 待完成操作 =====
+export type PendingAction =
+  | { kind: 'place'; type: string }
+  | { kind: 'wire'; start: PinRef }
+  | null;

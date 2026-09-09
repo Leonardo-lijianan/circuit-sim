@@ -3,7 +3,11 @@
 import { ComponentLoader } from './loader/ComponentLoader';
 import { CanvasManager } from './renderer/CanvasManager';
 import { CircuitRenderer } from './renderer/CircuitRenderer';
-import { PanelManager } from './ui/PanelManager';  // ← 新增
+import { PanelManager } from './ui/PanelManager';
+import { ToolbarManager } from './ui/ToolbarManager';
+import { StatusBarManager } from './ui/StatusBarManager';
+import { KeyboardManager } from './io/KeyboardManager';
+import { InteractionManager } from './interaction/InteractionManager';
 import { defaultViewport, screenToLogic } from './utils/coordinates';
 import type { Circuit, ComponentInstance, Wire } from './types';
 
@@ -29,19 +33,28 @@ const viewport = defaultViewport();
 console.log(`📐 Canvas 尺寸: ${canvasManager.getSize().width} × ${canvasManager.getSize().height}`);
 
 // ============================================================
-// 3. 创建渲染器
+// 3. 创建交互核心
+// ============================================================
+
+const interaction = new InteractionManager();
+
+// ============================================================
+// 4. UI 管理器
+// ============================================================
+
+/* const _toolbar = */ new ToolbarManager(interaction);      // 自动绑定模式按钮
+/* const keyboard = */ new KeyboardManager(interaction);    // 自动绑定快捷键
+// const panel = new PanelManager(loader); // phase2新增 创建面板管理器
+const statusBar = new StatusBarManager();
+
+// ============================================================
+// 5. 创建渲染器
 // ============================================================
 
 const renderer = new CircuitRenderer(ctx, loader, viewport);
 
 // ============================================================
-// 3.5 创建面板管理器（新增）
-// ============================================================
-
-const panelManager = new PanelManager(loader);
-
-// ============================================================
-// 4. 构造测试电路
+// 6. 构造测试电路 （Phase 3 后由 CircuitManager 管理）
 // ============================================================
 
 const testComponents: ComponentInstance[] = [
@@ -83,7 +96,7 @@ const testCircuit: Circuit = {
 };
 
 // ============================================================
-// 5. 渲染
+// 7. 渲染
 // ============================================================
 
 function render() {
@@ -93,31 +106,26 @@ function render() {
 
 render();
 
-// ★ 关键修复：注册 resize 回调，窗口变化时自动重绘
-canvasManager.onResize(() => {
-  // render();
-});
+/**
+ * ★ 关键修复：注册 resize 回调，窗口变化时自动重绘,不然画布尺寸变化后不会自动重绘，导致显示异常。
+ * 监听画布尺寸变化。
+ * 注意：直接传入 render 引用（而非箭头函数包裹），
+ * 便于在销毁时调用 off(render) 精准清除；
+ * 当前 render 无参数且不依赖 this，故安全性等同箭头函数。
+ */
+canvasManager.onResize(render);
 
 // ============================================================
-// 6. 状态栏坐标更新
+// 8. 鼠标坐标 → 状态栏
 // ============================================================
 
-const cursorPosEl = document.getElementById('cursorPos');
 canvas.addEventListener('mousemove', (event) => {
   const logicPos = screenToLogic(event.clientX, event.clientY, canvas, viewport);
-  if (cursorPosEl) {
-    cursorPosEl.textContent = `(${Math.round(logicPos.x)}, ${Math.round(logicPos.y)})`;
-  }
+  statusBar.updateCursorPos(logicPos.x, logicPos.y);
 });
 
-// 更新元件/连线计数
-const compCountEl = document.getElementById('compCount');
-const wireCountEl = document.getElementById('wireCount');
-if (compCountEl) compCountEl.textContent = String(testComponents.length);
-if (wireCountEl) wireCountEl.textContent = String(testWires.length);
-
 // ============================================================
-// 7. 调试接口
+// 9. 调试接口
 // ============================================================
 
 let ledOn = false;
@@ -133,6 +141,7 @@ let ledOn = false;
 (window as any).__circuit = testCircuit;
 (window as any).__loader = loader;
 (window as any).__renderer = renderer;
+(window as any).__interaction = interaction;
 
-console.log('✅ 系统就绪');
+console.log('✅ phase 2: 系统就绪');
 console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');
