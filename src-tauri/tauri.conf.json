@@ -14,8 +14,11 @@
     "windows": [
       {
         "title": "circuit-sim",
-        "width": 800,
-        "height": 600
+        "width": 900,
+        "height": 675,
+        "minWidth": 860,
+        "minHeight": 520,
+        "center": true
       }
     ],
     "security": {

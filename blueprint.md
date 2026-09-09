@@ -778,3 +778,1257 @@ CompMaker 导出的元件包必须符合以下目录结构：
 - 通信数据量最小化，职责边界清晰。
 - 视觉系统完整可施工，CompMaker 可对接。
 - 状态转换覆盖所有元件类型（LED、开关、数码管、点阵屏等）。
+
+***
+
+你说得太对了。**蓝图严重缺失了“人机交互”这一视角**——过去我们只关注数据怎么加载、怎么渲染，但完全没考虑用户**实际使用时的操作流程**，以及 UI 布局对操作习惯的影响。
+
+**“元件抽屉放右边”**，这是对右撇子用户的尊重。我完全接受并采纳。
+
+现在，我结合 **用户体验流程（UX Flow）** 和 **交互技术实现（Interaction Implementation）**，推出 **v1.2 终极完整施工蓝图**。它将补全所有缺失的操作逻辑、界面布局和交互细节。
+
+
+# 电路仿真系统 - v1.2 终极完整施工蓝图
+
+> **v1.2 核心更新**：从“数据驱动”升级为“**人机交互驱动**”。完整补全了 UI 布局（右侧抽屉）、用户操作全流程（放置→连线→选中→仿真）、交互状态机（模式切换）、以及所有鼠标/键盘交互的技术实现细节。v1.0/v1.1 的所有技术架构（fix/flex、viewBox、Rust 求解器）全部保留，本次仅做增量补充。
+
+
+## 一、用户操作全流程（UX 核心）
+
+一个完整的电路仿真工作流包含以下步骤，我们的 UI 和交互设计必须严格支撑这个流程：
+
+| 步骤 | 用户动作 | 系统响应 | 对应 Phase |
+| :--- | :--- | :--- | :--- |
+| 1. 启动 | 双击桌面图标 | 显示主界面（画布 + 右侧元件库） | Phase 0 |
+| 2. 放置元件 | 从右侧抽屉**拖拽**（或单击）元件到画布 | 元件出现在画布指定位置，默认状态 | Phase 3 |
+| 3. 移动/调整 | 在画布上**拖拽**元件 | 元件跟随鼠标移动，松开后固定 | Phase 3 |
+| 4. 连线 | 点击元件的**引脚**（进入连线模式）→ 再点击另一引脚 | 生成一条导线 | Phase 3 |
+| 5. 选中 & 编辑 | 单击选中元件 → 右侧自动显示**参数面板** | 修改参数值（如阻值） | Phase 3/7 |
+| 6. 仿真 | 点击工具栏 **“开始”** | 数据发给 Rust → 结果返回 → LED 亮灭/数值更新 | Phase 5/6 |
+| 7. 清理 | 选中元件按 **Delete** 键 | 移除元件及其关联导线 | Phase 3 |
+
+
+## 二、最终 UI 布局（右侧优先）
+
+针对右撇子优化，核心操作区（元件库、参数面板）全部放在右侧。
+
+```
+┌────────────────────────────────────────────────────────────────────────────────┐
+│  ⚡ 电路仿真系统          [选择] [连线] [放置] | [▶开始] [⏸暂停] [⏹停止] │  ← 工具栏（48px）
+├───────────────────────────────────────────────────────────────┬────────────────┤
+│                                                               │  📦 元件库    │  ← 右侧抽屉（220px）
+│                                                               │  ┌──────────┐ │
+│                    Canvas 画布                               │  │ 电阻      │ │
+│                                                               │  ├──────────┤ │
+│              （电路图主绘制区域）                             │  │ LED       │ │
+│                                                               │  ├──────────┤ │
+│                                                               │  │ 开关      │ │
+│                                                               │  └──────────┘ │
+│                                                               │  ──────────── │
+│                                                               │  🔧 参数面板  │  ← 选中后显示
+│                                                               │  阻值: [1000] │
+│                                                               │  颜色: [红▼] │
+│                                                               │               │
+├───────────────────────────────────────────────────────────────┴────────────────┤
+│  元件: 2 | 连线: 1 | 仿真: 停止 | 光标: (120, 450)  | 模式: 选择              │  ← 状态栏（28px）
+└────────────────────────────────────────────────────────────────────────────────┘
+```
+
+**布局决策依据**：
+1. **右侧抽屉**：右撇子鼠标移动距离短，点击效率高。
+2. **参数面板与抽屉合并**：减少视线跳跃，选中元件后下方直接显示属性。
+3. **画布最大化**：中间区域全留给电路图绘制。
+
+
+## 三、交互状态机（核心！）
+
+用户在不同时刻处于不同“模式”，模式决定了鼠标/键盘的行为。这是 Phase 3 的核心逻辑。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Select
+    Select --> Place: 点击抽屉元件
+    Place --> Select: 画布点击放置 / 按 ESC
+    Select --> Wire: 点击引脚(开始)
+    Wire --> Select: 点击另一引脚(完成) / 按 ESC(取消)
+    Select --> Pan: 按 空格键/中键
+    Pan --> Select: 释放 空格键/中键
+```
+
+| 模式 | 鼠标左键点击画布 | 鼠标拖拽 | 键盘快捷键 |
+| :--- | :--- | :--- | :--- |
+| **选择 (Select)** | 选中元件（高亮） | 拖动选中元件 | `Delete` 删除选中 |
+| **放置 (Place)** | 在点击位置创建元件（预先选择的类型） | 无 | `ESC` 退出放置模式 |
+| **连线 (Wire)** | 标记引脚起点/终点（若点在引脚上） | 拖动临时导线 | `ESC` 取消连线 |
+| **平移 (Pan)** | 无 | 拖动画布背景 | `Space` 或 `中键拖拽` |
+
+**技术实现要点**：
+- 模式切换通过工具栏按钮或快捷键触发。
+- 光标样式随模式变化（`default` / `crosshair` / `pointer` / `grab`）。
+
+
+## 四、画布交互的技术实现（碰撞检测与坐标映射）
+
+### 4.1 坐标映射（最关键！）
+Canvas 的 `click`/`mousemove` 事件获取的是**屏幕像素坐标**，需要转换为**画布逻辑坐标**（考虑 CSS 缩放和 Canvas 尺寸）。
+
+```typescript
+function getCanvasCoords(event: MouseEvent, canvas: HTMLCanvasElement): { x: number, y: number } {
+  const rect = canvas.getBoundingClientRect();
+  // 计算 CSS 缩放比例（画布实际像素 vs CSS 显示尺寸）
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (event.clientX - rect.left) * scaleX,
+    y: (event.clientY - rect.top) * scaleY
+  };
+}
+```
+
+### 4.2 引脚磁吸（Hit Detection）
+用户点击连线时，必须精准识别点击是否落在引脚上。我们使用**圆形碰撞检测**（比矩形更精确）。
+
+```typescript
+function isPointOnPin(
+  mouseX: number, mouseY: number,
+  pin: PinDefinition,
+  comp: ComponentInstance
+): boolean {
+  const pinWorldX = comp.x + pin.x;
+  const pinWorldY = comp.y + pin.y;
+  const radius = pin.hitRadius || 15; // 默认 15px
+  const dx = mouseX - pinWorldX;
+  const dy = mouseY - pinWorldY;
+  return (dx * dx + dy * dy) <= (radius * radius);
+}
+```
+
+**视觉反馈**：当鼠标移近引脚（< 20px）时，引脚放大/高亮显示（磁吸效果）。
+
+### 4.3 选中高亮（Overlay 层）
+选中元件时，在元件外围绘制一个 **蓝色虚线矩形框 + 四角锚点**。此绘制发生在单独的 Overlay 层（或最后绘制），确保不被元件遮挡。
+
+### 4.4 拖拽行为
+- 鼠标按下（`mousedown`）：记录起始坐标，标记 `isDragging = true`。
+- 鼠标移动（`mousemove`）：计算偏移量 `(dx, dy)`，更新 `comp.x` 和 `comp.y`，触发重绘。
+- 鼠标释放（`mouseup`）：清空 `isDragging`，结束移动。
+
+
+## 五、右侧面板的细化设计
+
+### 5.1 元件抽屉（顶部）
+- **数据来源**：`ComponentLoader.getAllDefinitions()`。
+- **渲染方式**：每个元件显示小图标 + 名称。
+- **交互**：点击元件 → 进入 **“放置 (Place)”** 模式，光标变为十字准星 + 元件预览。
+
+### 5.2 参数面板（底部，仅选中元件时显示）
+- **触发**：单击画布元件。
+- **数据来源**：`def.params` 定义。
+- **表单生成**：根据 `type` 动态生成控件（`number` → input number，`boolean` → checkbox，`select` → dropdown）。
+- **实时更新**：修改参数后立即更新 `comp.params`，若仿真正在运行则触发热更新（重新发送数据给 Rust）。
+
+
+## 六、CircuitManager 状态管理的补充
+
+我们之前定义了 `CircuitManager`，现在补充其内部状态和交互 API：
+
+```typescript
+interface CircuitManager {
+  // ---- 数据 ----
+  components: ComponentInstance[];
+  wires: Wire[];
+  selectedId: number | null;
+  nextId: number;
+
+  // ---- 交互状态 ----
+  mode: 'select' | 'place' | 'wire' | 'pan';
+  placeType: string | null;      // 放置模式下的元件类型
+  wireStart: { componentId: number; pinId: string } | null;
+
+  // ---- 核心 API ----
+  addComponent(type: string, x: number, y: number): void;
+  removeComponent(id: number): void;
+  selectComponent(id: number | null): void;
+  startWire(compId: number, pinId: string): void;
+  finishWire(compId: number, pinId: string): void;
+  cancelWire(): void;
+  updateParam(compId: number, paramId: string, value: any): void;
+
+  // ---- 事件 ----
+  onModified: () => void;        // 数据变化时触发重绘
+}
+```
+
+
+## 七、Phase 2 渲染层的补充：Z-Index 与绘制顺序
+
+为了支持选中高亮和临时导线，绘制顺序必须分层（离屏缓存暂不实现，但预留接口）：
+
+| 层 (Layer) | 内容 | 说明 |
+| :--- | :--- | :--- |
+| 0 | 背景网格 | 始终最底层 |
+| 1 | 导线 (Wires) | 元件的下方 |
+| 2 | 固定层 (Fix) | 所有元件的 fix.svg |
+| 3 | 动态层 (Flex) | 所有元件的 flex/*.svg（叠加） |
+| 4 | 临时导线 (Temp Wire) | 连线拖拽时的预览线（动态更新） |
+| 5 | 选中高亮 (Selection) | 蓝色虚线框 + 锚点 |
+| 6 | 引脚热区 (Pin Highlights) | 鼠标悬停时放大引脚 |
+
+
+## 八、键盘快捷键完整列表（提升效率）
+
+| 快捷键 | 功能 | 适用模式 |
+| :--- | :--- | :--- |
+| `Delete` / `Backspace` | 删除选中元件 | 全局 |
+| `Esc` | 取消当前操作（退出放置/取消连线/取消选中） | 全局 |
+| `Space` | 切换平移模式（按住拖拽） | 全局 |
+| `1` | 切换到“选择”模式 | 全局 |
+| `2` | 切换到“连线”模式 | 全局 |
+| `3` | 切换到“放置”模式 | 全局 |
+| `Ctrl+A` | 全选（未来） | 全局 |
+| `Ctrl+Z` | 撤销（未来） | 全局 |
+
+
+## 九、数据持久化与导入导出（Phase 9 预留）
+
+虽然 Phase 2 不实现，但 UI 上需预留“导入/导出”按钮位置（工具栏最右侧）。
+
+- **导出**：将 `Circuit` 对象序列化为 JSON，通过 Tauri `fs` 插件保存为 `.circuit.json` 文件。
+- **导入**：读取 JSON 文件，反序列化为 `Circuit` 对象，替换当前电路。
+
+
+## 十、更新的开发路线图（v1.2 版）
+
+| 阶段 | 任务 | 交互补充 | UI 补充 |
+| :--- | :--- | :--- | :--- |
+| **Phase 0** | Tauri v2 骨架 | — | 空白窗口 |
+| **Phase 1** | ComponentLoader + viewBox 解析 | — | — |
+| **Phase 2** | **Canvas 基础渲染（fix + flex）** | — | — |
+| **Phase 3** | **交互系统（放置、拖拽、连线、选中）** | 状态机、碰撞检测、磁吸、快捷键 | 切换模式 |
+| **Phase 4** | Rust 求解器 | — | — |
+| **Phase 5** | Worker + Channel 联调 | 仿真按钮触发 | 状态栏更新 |
+| **Phase 6** | 状态转换规则引擎 | 仿真后自动刷新视觉 | — |
+| **Phase 7** | **参数面板动态生成 + 热更新** | 修改参数触发重算 | 右侧面板下半部分 |
+| **Phase 8** | AC/Transient 求解器 + 动画 | — | — |
+| **Phase 9** | 浮地高亮、导入导出、性能优化 | 错误反馈 | 菜单栏 |
+
+
+## 十一、总结：v1.2 相对于 v1.1 的补充内容
+
+| 补充项 | 说明 |
+| :--- | :--- |
+| **UI 布局** | 右侧元件抽屉 + 参数面板，针对右撇子优化 |
+| **用户工作流** | 定义了完整的 7 步操作流程（启动→放置→连线→选中→仿真→清理） |
+| **交互状态机** | 定义了 `select` / `place` / `wire` / `pan` 四种模式及切换逻辑 |
+| **坐标映射算法** | 解决了 Canvas CSS 缩放与逻辑坐标的转换问题 |
+| **引脚磁吸算法** | 圆形碰撞检测 + 视觉反馈（高亮/放大） |
+| **选中高亮绘制** | 虚线框 + 锚点，确定 Overlay 层 |
+| **拖拽实现** | 基于 `mousedown`/`mousemove`/`mouseup` 的交互闭环 |
+| **键盘快捷键** | 定义了 `Delete`、`Esc`、`Space`、`1/2/3` 等常用快捷键 |
+| **绘制 Z-Index 分层** | 明确 7 个渲染层的顺序（背景→导线→Fix→Flex→临时线→高亮→引脚热区） |
+| **参数面板动态表单** | 根据 `meta.json` 的 `params` 定义生成控件 |
+| **导入导出预留** | 工具栏预留按钮位置，对接 Phase 9 |
+
+
+## 十二、下一步行动
+
+基于这份 **v1.2 完整蓝图**，我们现在可以**正式开始 Phase 2 的代码编写**，同时为 Phase 3 的交互预留接口。
+
+**我将在 Phase 2 代码中做到**：
+1. 使用 v1.2 的 UI 布局（右侧抽屉 + 画布最大化）。
+2. 实现坐标映射工具函数（供 Phase 3 复用）。
+3. 实现分层渲染（Fix → Flex → 高亮预留）。
+4. 在 `main.ts` 中构建测试电路（电阻 + LED + 连线）。
+
+***
+
+# 电路仿真系统 - v1.2 完整施工蓝图
+
+> **v1.2 补充说明**：本次更新在 v1.1 基础上，完整补充了**交互系统**（四种模式定义、切换规则、状态机实现）、**坐标映射系统**（屏幕→画布→逻辑三层转换）、**碰撞检测算法**（引脚圆形检测、磁吸阈值、点击优先级）、**数据更新闭环**（操作→onModified→重绘→仿真热更新）、**渲染管线Z-Index分层**（6层绘制顺序）、**键盘快捷键系统**、**右侧面板互斥切换机制**（元件库↔参数面板）、**边界情况处理**、以及**Phase 2到Phase 9的完整对接计划**。
+
+**原v1.1所有内容全部保留**，本次仅作增量补充。
+
+---
+
+## 核心设计哲学（v1.2 增补两条）
+
+9. **交互即数据修改**：所有用户操作（点击、拖拽、连线）最终都转化为对 `CircuitManager` 中 `components` / `wires` 数组的增删改操作，操作完成后触发统一的重绘流程。
+
+10. **模式决定行为**：同一鼠标事件在不同模式下有完全不同的解释（Select=选中/拖拽，Place=放置，Wire=连线，Pan=平移），通过模式状态机统一分发。
+
+
+## 一、项目总览与目标
+
+**v1.2 增补目标**：
+- 定义完整的交互模式系统（Select / Place / Wire / Pan）
+- 定义坐标映射链（屏幕坐标 → 画布物理坐标 → 电路逻辑坐标）
+- 定义碰撞检测算法（引脚命中、元件命中、磁吸吸附）
+- 定义数据更新闭环（操作触发数据修改 → 触发重绘 → 触发仿真热更新）
+- 定义渲染管线 Z-Index 分层（6层绘制顺序）
+- 定义键盘快捷键系统
+- 定义右侧面板互斥切换机制
+- 定义边界情况处理策略
+
+
+## 二、技术选型（不变，锁定版）
+
+
+## 三、总体架构分层图（v1.2 增补交互层细节）
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              前端 UI 层 (TypeScript)                               │
+│  ┌──────────────┐ ┌───────────────────────────────┐ ┌──────────────────────────┐  │
+│  │   工具栏     │ │         画布区域              │ │     右侧面板             │  │
+│  │  [模式按钮]  │ │  ┌─────────────────────────┐  │ │  ┌────────────────────┐ │  │
+│  │  [仿真控制]  │ │  │    Canvas 画布          │  │ │  │  📦 元件库 或       │ │  │
+│  │  [导入导出]  │ │  │    (6层Z-Index渲染)     │  │ │  │  🔧 参数面板        │ │  │
+│  └──────────────┘ │  └─────────────────────────┘  │ │  └────────────────────┘ │  │
+│                    │       ▲  鼠标事件             │ │          ▲              │  │
+│                    │       │  键盘事件             │ │          │ 互斥切换      │  │
+│                    └───────┼───────────────────────┘ └──────────┼───────────────┘  │
+│                            │                                    │                    │
+│                    ┌───────▼────────────────────────────────────▼────────────────┐  │
+│                    │              交互控制层 (Interaction Layer)                 │  │
+│                    │  ┌────────────────────────────────────────────────────────┐  │  │
+│                    │  │  模式状态机 (Mode Machine)                            │  │  │
+│                    │  │  Select → Place/Wire/Pan (临时) → Select              │  │  │
+│                    │  └────────────────────────────────────────────────────────┘  │  │
+│                    │  ┌────────────────────────────────────────────────────────┐  │  │
+│                    │  │  事件分发器 (Event Dispatcher)                        │  │  │
+│                    │  │  mousedown → 根据模式 → 调用对应处理函数              │  │  │
+│                    │  └────────────────────────────────────────────────────────┘  │  │
+│                    │  ┌────────────────────────────────────────────────────────┐  │  │
+│                    │  │  碰撞检测器 (Hit Tester)                              │  │  │
+│                    │  │  引脚检测(圆形) / 元件检测(矩形) / 磁吸(最近引脚)     │  │  │
+│                    │  └────────────────────────────────────────────────────────┘  │  │
+│                    └──────────────────────────────────────────────────────────────┘  │
+│                                          │                                           │
+│                          ┌───────────────▼───────────────┐                           │
+│                          │       CircuitManager          │                           │
+│                          │  components: Component[]      │                           │
+│                          │  wires: Wire[]               │                           │
+│                          │  selectedId: number | null   │                           │
+│                          │  mode: Mode                  │                           │
+│                          │  pending: PendingAction      │                           │
+│                          │                              │                           │
+│                          │  addComponent()              │                           │
+│                          │  removeComponent()           │                           │
+│                          │  moveComponent()             │                           │
+│                          │  selectComponent()           │                           │
+│                          │  addWire()                   │                           │
+│                          │  removeWire()                │                           │
+│                          │  updateParam()               │                           │
+│                          └───────────────┬───────────────┘                           │
+│                                          │                                           │
+│                          ┌───────────────▼───────────────┐                           │
+│                          │       ComponentLoader         │                           │
+│                          │  registry: Map<type, def>    │                           │
+│                          │  imageCache: Map<path, img>  │                           │
+│                          │  flexCache: Map<path, unit>  │                           │
+│                          └───────────────────────────────┘                           │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+                                     │
+          ┌──────────────────────────┴──────────────────────────┐
+          │  invoke (控制/更新)                                │ Channel (结果推送)
+          ▼                                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              Rust 后台常驻 Worker (纯计算)                           │
+│  (同 v1.1，此处省略)                                                                 │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+
+## 四、核心数据模型
+
+**v1.1 所有数据模型全部保留，新增以下交互相关类型：**
+
+```typescript
+// ===== 交互模式 =====
+type Mode = 'select' | 'place' | 'wire' | 'pan';
+
+// ===== 待完成操作（Pending Action） =====
+type PendingAction =
+  | { kind: 'place'; type: string }          // Place 模式：待放置的元件类型
+  | { kind: 'wire'; start: PinRef }          // Wire 模式：已选中的起点引脚
+  | null;                                    // 无未完成操作
+
+// ===== 引脚引用 =====
+interface PinRef {
+  componentId: number;
+  pinId: string;
+}
+
+// ===== 视口状态（Phase 3 以后） =====
+interface Viewport {
+  offsetX: number;
+  offsetY: number;
+  scale: number;  // 1.0 = 100%
+}
+
+// ===== 右侧面板状态 =====
+type PanelState =
+  | { kind: 'library' }                     // 显示元件库
+  | { kind: 'params'; componentId: number } // 显示参数面板
+  | { kind: 'empty' };                      // 占位
+
+// ===== CircuitManager 的完整状态 =====
+interface CircuitManagerState {
+  components: ComponentInstance[];
+  wires: Wire[];
+  selectedId: number | null;
+  nextId: number;
+  mode: Mode;
+  pending: PendingAction;
+  viewport: Viewport;
+  panelState: PanelState;
+  simState: 'idle' | 'running' | 'paused' | 'stopped';
+}
+```
+
+
+## 五、前端核心模块（v1.2 增补交互模块）
+
+### 5.1 交互模式状态机（`InteractionManager`）
+
+```typescript
+class InteractionManager {
+  private mode: Mode = 'select';
+  private pending: PendingAction = null;
+
+  // ---- 模式切换 ----
+  setMode(newMode: Mode) {
+    // 退出当前模式时清理状态
+    if (this.mode === 'wire' && this.pending) {
+      this.cancelPending(); // 取消未完成连线
+    }
+    if (this.mode === 'place' && this.pending) {
+      this.pending = null; // 清除待放置类型
+    }
+    this.mode = newMode;
+    this.updateCursor();
+    this.updateUI();
+  }
+
+  // ---- 事件分发 ----
+  handleMouseDown(event: CanvasMouseEvent, circuit: CircuitManager) {
+    switch (this.mode) {
+      case 'select': this.handleSelectMouseDown(event, circuit); break;
+      case 'place': this.handlePlaceMouseDown(event, circuit); break;
+      case 'wire': this.handleWireMouseDown(event, circuit); break;
+      case 'pan': this.handlePanMouseDown(event, circuit); break;
+    }
+  }
+
+  handleMouseMove(event: CanvasMouseEvent, circuit: CircuitManager) {
+    // 更新光标位置、磁吸检测、临时连线
+    if (this.mode === 'wire' && this.pending) {
+      this.updateTempWire(event, circuit);
+    }
+    if (this.mode === 'select') {
+      this.updateHoverState(event, circuit);
+    }
+  }
+
+  handleMouseUp(event: CanvasMouseEvent, circuit: CircuitManager) {
+    if (this.mode === 'pan') {
+      this.handlePanMouseUp(event, circuit);
+    }
+    if (this.mode === 'select' && circuit.isDragging) {
+      circuit.endDrag();
+    }
+  }
+
+  // ---- Select 模式 ----
+  private handleSelectMouseDown(event: CanvasMouseEvent, circuit: CircuitManager) {
+    const hit = this.hitTest(event.logicalPos, circuit);
+    if (hit.kind === 'pin') {
+      // 检测到引脚 → 自动进入 Wire 模式
+      this.setMode('wire');
+      this.pending = { kind: 'wire', start: hit.pinRef };
+      circuit.startWire(hit.pinRef);
+    } else if (hit.kind === 'component') {
+      circuit.selectComponent(hit.componentId);
+      // 记录拖拽起始位置
+      circuit.startDrag(hit.componentId, event.logicalPos);
+    } else {
+      circuit.selectComponent(null); // 取消选中
+    }
+  }
+
+  // ---- Place 模式 ----
+  private handlePlaceMouseDown(event: CanvasMouseEvent, circuit: CircuitManager) {
+    if (!this.pending || this.pending.kind !== 'place') return;
+    const type = this.pending.type;
+    circuit.addComponent(type, event.logicalPos.x, event.logicalPos.y);
+    // 放置后自动回到 Select 模式
+    this.setMode('select');
+  }
+
+  // ---- Wire 模式 ----
+  private handleWireMouseDown(event: CanvasMouseEvent, circuit: CircuitManager) {
+    const hit = this.hitTest(event.logicalPos, circuit);
+    if (hit.kind !== 'pin') {
+      // 点击非引脚区域 → 取消连线
+      this.cancelPending();
+      this.setMode('select');
+      return;
+    }
+    if (!this.pending || this.pending.kind !== 'wire') {
+      // 第一次点击引脚 → 记录起点
+      this.pending = { kind: 'wire', start: hit.pinRef };
+      circuit.startWire(hit.pinRef);
+    } else {
+      // 第二次点击引脚 → 完成连线
+      const start = this.pending.start;
+      if (start.componentId === hit.pinRef.componentId && start.pinId === hit.pinRef.pinId) {
+        // 起点终点相同 → 无效连线，取消
+        this.cancelPending();
+        this.setMode('select');
+        return;
+      }
+      circuit.addWire(start, hit.pinRef);
+      this.pending = null;
+      this.setMode('select');
+    }
+  }
+}
+```
+
+### 5.2 碰撞检测器（`HitTester`）
+
+```typescript
+class HitTester {
+  // ---- 引脚检测（圆形） ----
+  static hitTestPins(
+    logicalX: number,
+    logicalY: number,
+    components: ComponentInstance[],
+    loader: ComponentLoader
+  ): PinRef | null {
+    let minDist = Infinity;
+    let nearest: PinRef | null = null;
+    for (const comp of components) {
+      const def = loader.getDefinition(comp.type);
+      if (!def) continue;
+      for (const pin of def.pins) {
+        const cx = comp.x + pin.x;
+        const cy = comp.y + pin.y;
+        const dx = logicalX - cx;
+        const dy = logicalY - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const radius = pin.hitRadius || 15;
+        if (dist < radius && dist < minDist) {
+          minDist = dist;
+          nearest = { componentId: comp.id, pinId: pin.id };
+        }
+      }
+    }
+    return nearest;
+  }
+
+  // ---- 元件检测（矩形） ----
+  static hitTestComponents(
+    logicalX: number,
+    logicalY: number,
+    components: ComponentInstance[]
+  ): number | null {
+    // 逆序遍历（上层元件优先）
+    for (let i = components.length - 1; i >= 0; i--) {
+      const comp = components[i];
+      if (logicalX >= comp.x && logicalX <= comp.x + comp.w &&
+          logicalY >= comp.y && logicalY <= comp.y + comp.h) {
+        return comp.id;
+      }
+    }
+    return null;
+  }
+
+  // ---- 磁吸检测（最近引脚，阈值20px） ----
+  static snapToNearestPin(
+    logicalX: number,
+    logicalY: number,
+    components: ComponentInstance[],
+    loader: ComponentLoader,
+    threshold: number = 20
+  ): { snapped: boolean; x: number; y: number; ref: PinRef | null } {
+    let minDist = Infinity;
+    let nearest: PinRef | null = null;
+    for (const comp of components) {
+      const def = loader.getDefinition(comp.type);
+      if (!def) continue;
+      for (const pin of def.pins) {
+        const cx = comp.x + pin.x;
+        const cy = comp.y + pin.y;
+        const dx = logicalX - cx;
+        const dy = logicalY - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < threshold && dist < minDist) {
+          minDist = dist;
+          nearest = { componentId: comp.id, pinId: pin.id };
+        }
+      }
+    }
+    if (nearest) {
+      const comp = components.find(c => c.id === nearest.componentId);
+      if (!comp) return { snapped: false, x: logicalX, y: logicalY, ref: null };
+      const def = loader.getDefinition(comp.type);
+      if (!def) return { snapped: false, x: logicalX, y: logicalY, ref: null };
+      const pin = def.pins.find(p => p.id === nearest.pinId);
+      if (!pin) return { snapped: false, x: logicalX, y: logicalY, ref: null };
+      return {
+        snapped: true,
+        x: comp.x + pin.x,
+        y: comp.y + pin.y,
+        ref: nearest
+      };
+    }
+    return { snapped: false, x: logicalX, y: logicalY, ref: null };
+  }
+
+  // ---- 综合检测（先引脚后元件） ----
+  static hitTest(
+    logicalX: number,
+    logicalY: number,
+    components: ComponentInstance[],
+    loader: ComponentLoader
+  ): { kind: 'pin'; ref: PinRef } | { kind: 'component'; id: number } | { kind: 'none' } {
+    // 先检测引脚
+    const pinRef = this.hitTestPins(logicalX, logicalY, components, loader);
+    if (pinRef) {
+      return { kind: 'pin', ref: pinRef };
+    }
+    // 再检测元件
+    const compId = this.hitTestComponents(logicalX, logicalY, components);
+    if (compId !== null) {
+      return { kind: 'component', id: compId };
+    }
+    return { kind: 'none' };
+  }
+}
+```
+
+### 5.3 右侧面板互斥切换
+
+```typescript
+class PanelManager {
+  private current: PanelState = { kind: 'library' };
+  private element: HTMLElement;
+
+  // ---- 切换逻辑 ----
+  update(selectedId: number | null, components: ComponentInstance[]) {
+    if (selectedId === null) {
+      this.showLibrary();
+    } else {
+      const comp = components.find(c => c.id === selectedId);
+      if (comp) {
+        this.showParams(comp);
+      } else {
+        this.showLibrary();
+      }
+    }
+  }
+
+  // ---- 显示元件库 ----
+  private showLibrary() {
+    this.current = { kind: 'library' };
+    this.renderLibrary();
+  }
+
+  // ---- 显示参数面板 ----
+  private showParams(comp: ComponentInstance) {
+    this.current = { kind: 'params', componentId: comp.id };
+    this.renderParams(comp);
+  }
+
+  // ---- 渲染元件库 ----
+  private renderLibrary() {
+    // 从 loader 读取所有元件定义
+    // 每个元件显示为：小图标 + 名称
+    // 点击后触发 Place 模式
+  }
+
+  // ---- 渲染参数面板 ----
+  private renderParams(comp: ComponentInstance) {
+    const def = loader.getDefinition(comp.type);
+    if (!def) return;
+    // 根据 def.params 动态生成表单
+    // 每个参数控件：
+    //   - number → input type="number"
+    //   - boolean → checkbox
+    //   - select → select + options
+    //   - string → input type="text"
+    // 修改参数时调用 circuit.updateParam(comp.id, paramId, value)
+  }
+}
+```
+
+
+## 六、渲染管线 Z-Index 分层（v1.2 新增）
+
+### 6.1 六层绘制顺序
+
+| 层号 | 层名 | 绘制内容 | 更新频率 | 绘制方法 |
+|------|------|----------|----------|----------|
+| 0 | 背景层 | 网格线、画布底色 | 不变（一次绘制） | `drawGrid()` |
+| 1 | 连线层 | 所有已完成连线 | 连线变化时 | `drawWires()` |
+| 2 | 固定层 (Fix) | 所有元件的 `fix.svg` | 元件位置/类型变化时 | `drawFixLayers()` |
+| 3 | 动态层 (Flex) | 所有元件的 `flex/*.svg` | 元件状态/参数变化时 | `drawFlexLayers()` |
+| 4 | 临时层 | 正在拖拽的连线预览 | 鼠标移动时（每帧） | `drawTempWire()` |
+| 5 | 覆盖层 | 选中高亮、引脚磁吸高亮 | 鼠标移动时（每帧） | `drawOverlay()` |
+
+### 6.2 绘制实现
+
+```typescript
+class CircuitRenderer {
+  render(circuit: Circuit, viewport: Viewport, hoverState: HoverState) {
+    // 层 0：背景
+    this.drawGrid();
+
+    // 层 1：连线
+    this.drawWires(circuit.wires, circuit.components);
+
+    // 层 2：Fix 层
+    for (const comp of circuit.components) {
+      this.drawFix(comp);
+    }
+
+    // 层 3：Flex 层
+    for (const comp of circuit.components) {
+      this.drawFlex(comp);
+    }
+
+    // 层 4：临时连线
+    if (hoverState.tempWire) {
+      this.drawTempWire(hoverState.tempWire);
+    }
+
+    // 层 5：覆盖层
+    if (circuit.selectedId !== null) {
+      const comp = circuit.components.find(c => c.id === circuit.selectedId);
+      if (comp) this.drawSelection(comp);
+    }
+    if (hoverState.snappedPin) {
+      this.drawPinHighlight(hoverState.snappedPin);
+    }
+  }
+}
+```
+
+### 6.3 性能优化预留
+
+- 层 0+1+2 可以绘制到离屏 Canvas，仅在数据变化时重绘
+- 层 3+4+5 每帧绘制在主 Canvas 上，叠加离屏缓存
+
+
+## 七、坐标映射系统（v1.2 新增）
+
+### 7.1 三层坐标系定义
+
+| 坐标层 | 定义 | 获取方式 |
+|--------|------|----------|
+| **屏幕坐标** | 相对于浏览器视口左上角 | `event.clientX` / `event.clientY` |
+| **Canvas 物理坐标** | 相对于 Canvas 元素左上角 | `screenToCanvas()` 转换 |
+| **电路逻辑坐标** | 电路图自身的坐标空间 | `canvasToLogic()` 转换（含视口偏移和缩放） |
+
+### 7.2 转换实现
+
+```typescript
+// 屏幕坐标 → Canvas 物理坐标
+function screenToCanvas(
+  screenX: number,
+  screenY: number,
+  canvas: HTMLCanvasElement
+): { x: number; y: number } {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (screenX - rect.left) * scaleX,
+    y: (screenY - rect.top) * scaleY
+  };
+}
+
+// Canvas 物理坐标 → 电路逻辑坐标
+function canvasToLogic(
+  canvasX: number,
+  canvasY: number,
+  viewport: Viewport
+): { x: number; y: number } {
+  return {
+    x: (canvasX - viewport.offsetX) / viewport.scale,
+    y: (canvasY - viewport.offsetY) / viewport.scale
+  };
+}
+
+// 电路逻辑坐标 → Canvas 物理坐标（绘制时使用）
+function logicToCanvas(
+  logicX: number,
+  logicY: number,
+  viewport: Viewport
+): { x: number; y: number } {
+  return {
+    x: logicX * viewport.scale + viewport.offsetX,
+    y: logicY * viewport.scale + viewport.offsetY
+  };
+}
+```
+
+### 7.3 Phase 2 简化约定
+
+Phase 2 暂不实现视口缩放和平移，约定：
+- `viewport.scale = 1.0`
+- `viewport.offsetX = 0`
+- `viewport.offsetY = 0`
+- 因此逻辑坐标与 Canvas 物理坐标相等
+
+
+## 八、键盘快捷键系统（v1.2 新增）
+
+### 8.1 快捷键完整列表
+
+| 快捷键 | 功能 | 适用模式 | 优先级 |
+|--------|------|----------|--------|
+| `1` | 切换到 Select 模式 | 全局 | 高 |
+| `2` | 切换到 Wire 模式 | 全局 | 高 |
+| `3` | 切换到 Place 模式 | 全局 | 高 |
+| `Esc` | 取消选中 / 取消连线 / 退出 Place | 全局 | 最高 |
+| `Delete` | 删除选中元件 | Select 模式 | 中 |
+| `Space`（按住） | 临时进入 Pan 模式 | 全局（非输入框） | 中 |
+
+### 8.2 实现
+
+```typescript
+class KeyboardManager {
+  private keys: Set<string> = new Set();
+
+  handleKeyDown(event: KeyboardEvent, interaction: InteractionManager, circuit: CircuitManager) {
+    // 忽略输入框内的按键
+    if (event.target instanceof HTMLInputElement) return;
+
+    switch (event.key) {
+      case '1': interaction.setMode('select'); break;
+      case '2': interaction.setMode('wire'); break;
+      case '3': interaction.setMode('place'); break;
+      case 'Escape':
+        // 优先级：取消临时连线 > 退出 Place > 取消选中
+        if (interaction.pending) {
+          interaction.cancelPending();
+        } else if (circuit.selectedId !== null) {
+          circuit.selectComponent(null);
+        }
+        interaction.setMode('select');
+        break;
+      case 'Delete':
+      case 'Backspace':
+        if (circuit.selectedId !== null) {
+          circuit.removeComponent(circuit.selectedId);
+        }
+        break;
+      case ' ':
+        event.preventDefault();
+        if (!this.keys.has('Space')) {
+          this.keys.add('Space');
+          interaction.setMode('pan');
+        }
+        break;
+    }
+  }
+
+  handleKeyUp(event: KeyboardEvent, interaction: InteractionManager) {
+    if (event.key === ' ' && this.keys.has('Space')) {
+      this.keys.delete('Space');
+      interaction.setMode('select');
+    }
+  }
+}
+```
+
+
+## 九、数据更新闭环（v1.2 新增）
+
+### 9.1 完整闭环流程
+
+```
+用户操作（点击/拖拽/按键）
+    │
+    ▼
+事件处理器（根据模式分发）
+    │
+    ▼
+数据更新函数（CircuitManager 方法）
+    ├── addComponent()      → components.push()
+    ├── removeComponent()   → components.splice() + 清理关联连线
+    ├── selectComponent()   → selectedId = id 或 null
+    ├── moveComponent()     → comp.x / comp.y 更新
+    ├── addWire()           → wires.push()
+    ├── removeWire()        → wires.splice()
+    └── updateParam()       → comp.params[key] = value
+    │
+    ▼
+触发 onModified() 回调
+    │
+    ▼
+onModified() 执行三件事：
+    ├── 1. 更新状态栏（元件数/连线数）
+    ├── 2. 更新右侧面板（选中变化时切换 library ↔ params）
+    └── 3. 标记渲染器需要重绘 → render()
+    │
+    ▼
+如果仿真状态 === 'running'：
+    ├── 构建 SolverInput
+    ├── 通过 invoke 发送给 Rust
+    └── Rust 求解后通过 Channel 返回 → applySimulationResults()
+```
+
+### 9.2 代码实现
+
+```typescript
+class CircuitManager {
+  private components: ComponentInstance[] = [];
+  private wires: Wire[] = [];
+  private selectedId: number | null = null;
+  private nextId: number = 1;
+  private simState: 'idle' | 'running' | 'paused' | 'stopped' = 'idle';
+  private onModified: () => void = () => {};
+
+  // ---- 数据更新方法 ----
+  addComponent(type: string, x: number, y: number) {
+    const def = this.loader.getDefinition(type);
+    if (!def) return;
+    const comp: ComponentInstance = {
+      id: this.nextId++,
+      type,
+      x,
+      y,
+      w: 60, // 从 def 中读取或使用默认值
+      h: 40,
+      params: this.getDefaultParams(def),
+      state: def.visual.default_state || 'default',
+    };
+    this.components.push(comp);
+    this.selectComponent(comp.id);
+    this.triggerUpdate();
+  }
+
+  removeComponent(id: number) {
+    // 删除关联连线
+    this.wires = this.wires.filter(w =>
+      w.startComponentId !== id && w.endComponentId !== id
+    );
+    // 删除元件
+    this.components = this.components.filter(c => c.id !== id);
+    if (this.selectedId === id) {
+      this.selectedId = null;
+    }
+    this.triggerUpdate();
+  }
+
+  updateParam(compId: number, paramId: string, value: any) {
+    const comp = this.components.find(c => c.id === compId);
+    if (!comp) return;
+    comp.params[paramId] = value;
+    this.triggerUpdate();
+  }
+
+  // ---- 触发更新 ----
+  private triggerUpdate() {
+    this.onModified();
+  }
+
+  // ---- 设置回调 ----
+  setOnModified(callback: () => void) {
+    this.onModified = callback;
+  }
+}
+```
+
+
+## 十、边界情况处理（v1.2 新增）
+
+### 10.1 引脚重叠优先级
+- 鼠标点击时，计算到所有引脚的距离
+- 选择距离最近的引脚（距离 < hitRadius）
+- 如果距离相同，选择元件 ID 较小的
+
+### 10.2 无效连线检测
+| 情况 | 处理方式 |
+|------|----------|
+| 起点终点是同一个引脚 | 拒绝，提示"不能连接到同一引脚" |
+| 连线已经存在 | 拒绝，提示"连线已存在" |
+| 起点或终点元件已被删除 | 自动清理关联连线 |
+
+### 10.3 拖拽与选中的区分
+- 鼠标按下时记录 `mouseDownPos`
+- 鼠标移动时计算 `distance = |mousePos - mouseDownPos|`
+- `distance > 5px` → 拖拽（移动元件）
+- `distance <= 5px` 且鼠标释放 → 单击（选中元件）
+
+### 10.4 删除级联
+- 删除元件时，自动删除所有关联连线
+- 如果选中的是被删除的元件，取消选中
+
+### 10.5 画布边界
+- 元件可以部分超出画布边界（允许用户拖到边缘）
+- 但不能完全拖出画布（`comp.x + comp.w > 0` 且 `comp.x < canvas.width`）
+
+
+## 十一、开发路线图（v1.2 更新版）
+
+| 阶段 | 任务 | v1.2 新增内容 |
+| :--- | :--- | :--- |
+| **Phase 0** | Tauri v2 骨架 + 目录结构 | — |
+| **Phase 1** | ComponentLoader + viewBox 解析 + 注册表构建 | — |
+| **Phase 2** | **Canvas 基础渲染（fix + flex 分层绘制）** | **6层Z-Index渲染管线、坐标映射工具** |
+| **Phase 3** | **前端交互系统** | **模式状态机、碰撞检测器、磁吸机制、键盘快捷键、右侧面板互斥切换** |
+| **Phase 4** | Rust 纯数学求解器 | — |
+| **Phase 5** | Worker + Channel 联调 | — |
+| **Phase 6** | 状态转换规则引擎 | — |
+| **Phase 7** | 参数面板动态生成 + 热更新 | — |
+| **Phase 8** | AC/Transient 求解器 + 动画 | — |
+| **Phase 9** | 浮地高亮、导入导出、性能优化 | — |
+
+
+## 十二、v1.2 总结
+
+**v1.2 在 v1.1 基础上新增了以下完整内容：**
+
+| 补充项 | 说明 |
+| :--- | :--- |
+| **交互模式系统** | 四种模式（Select/Place/Wire/Pan）的完整定义、切换规则、状态机实现代码 |
+| **事件分发机制** | 同一鼠标事件在不同模式下的不同处理逻辑 |
+| **碰撞检测系统** | 引脚圆形检测、元件矩形检测、磁吸吸附（20px阈值）、点击优先级 |
+| **坐标映射系统** | 屏幕→画布→逻辑三层坐标系转换函数 |
+| **渲染管线 Z-Index** | 6层绘制顺序的定义和实现代码 |
+| **键盘快捷键系统** | 完整快捷键列表和实现代码 |
+| **数据更新闭环** | 操作→onModified→重绘→仿真热更新的完整流程和代码 |
+| **右侧面板互斥切换** | 元件库↔参数面板的互斥规则和切换时机 |
+| **边界情况处理** | 引脚重叠、无效连线、拖拽/选中区分、删除级联等 5 类边界情况 |
+| **Phase 2-3 对接计划** | 明确 Phase 2 输出什么，Phase 3 在此基础上增量开发什么 |
+
+---
+
+**v1.2 蓝图现已完整覆盖：数据结构（v1.1）+ 交互系统 + 坐标映射 + 碰撞检测 + 渲染管线 + 快捷键 + 数据闭环 + 边界情况 + 右侧面板。**
+
+***
+
+好的，我来对蓝图进行补充，把 Phase 1 和 Phase 2 中已经完成但尚未记录的内容补进去。
+
+---
+
+# 电路仿真系统 - v1.3 完整施工蓝图
+
+> **v1.3 更新说明**：本次更新在 v1.2 基础上，补充了 Phase 1 的 **DOMParser SVG 解析方案**（`SVGParser.ts`）、Phase 2 的 **Flex 指令树渲染**（替代 `drawImage`）、以及 Task 2.2.5 **单 HTML 验证结果**。所有 v1.2 内容全部保留，本次仅作增量补充与修正。
+
+
+## 核心设计哲学（v1.3 增补两条）
+
+11. **Flex 单元采用指令树方案**：`flex/*.svg` 不再通过 `<img>` 加载为位图，而是由 `DOMParser` 解析为图元指令树（`SVGCommand[]`），渲染时逐条执行到 Canvas。该方案彻底解决了 Chromium 光栅化 SVG 时透明背景丢失的问题，同时保留了矢量图形的无限缩放能力。
+
+12. **渲染管线支持指令执行**：Fix 层仍使用 `drawImage`（因为 `fix.svg` 不涉及透明度/颜色动态变化），Flex 层使用指令树执行，支持运行时动态修改颜色、透明度、旋转和位移。
+
+
+## 四、核心数据模型（v1.3 补充 FlexUnitCache）
+
+### 4.1 补充：FlexUnitCache 类型
+
+在 v1.2 基础上，`FlexUnitCache` 已从位图缓存重构为指令树缓存：
+
+```typescript
+// src/types.ts
+
+import type { SVGCommand } from './loader/SVGParser';
+
+export interface FlexUnitCache {
+  commands: SVGCommand[];                    // 图元指令树
+  viewBox: { vx: number; vy: number; vw: number; vh: number };
+  offsetX: number;                            // viewBox.min-x
+  offsetY: number;                            // viewBox.min-y
+}
+```
+
+**变更说明**：
+- **移除**：`img: HTMLImageElement`、`width: number`、`height: number`
+- **新增**：`commands: SVGCommand[]`、`viewBox: { vx, vy, vw, vh }`
+- **保留**：`offsetX`、`offsetY`（仍从 viewBox 的 min-x/min-y 解析）
+
+
+## 五、前端核心模块（v1.3 补充 SVGParser）
+
+### 5.1 新增：SVGParser（`src/loader/SVGParser.ts`）
+
+负责将 `flex/*.svg` 解析为 Canvas 可执行的指令树，替代原有的 `<img>` 加载方式。
+
+**核心接口**：
+
+```typescript
+// src/loader/SVGParser.ts
+
+export interface SVGCommand {
+  type: 'circle' | 'rect' | 'path' | 'polygon';
+  fill: string | null;
+  stroke: string | null;
+  strokeWidth: number;
+  opacity: number;
+  // circle 专有
+  cx?: number; cy?: number; r?: number;
+  // rect 专有
+  x?: number; y?: number; w?: number; h?: number;
+  // path 专有
+  d?: string;
+  // polygon 专有
+  points?: number[];
+}
+
+export interface SVGParsedResult {
+  commands: SVGCommand[];
+  viewBox: { vx: number; vy: number; vw: number; vh: number };
+}
+
+export function parseSVG(svgText: string): SVGParsedResult;
+```
+
+**支持的 SVG 图元**：
+- `<circle>`：圆心 `(cx, cy)`、半径 `r`、填充色 `fill`、描边 `stroke`
+- `<rect>`：左上角 `(x, y)`、宽 `width`、高 `height`
+- `<path>`：路径数据 `d`
+- `<polygon>`：顶点列表 `points`
+
+**当前限制**（未来可扩展）：
+- 不支持 `<g>` 分组（但子元素会被遍历）
+- 不支持 `<defs>` / `<use>`（可后续扩展）
+- 不支持 `transform` 属性（可后续扩展）
+
+### 5.2 修改：ComponentLoader 中的 loadFlexUnit
+
+**原方案**（已废弃）：
+```typescript
+// 使用 new Image() 加载 SVG → 透明背景丢失
+const img = await this.loadImage(path);
+this.flexCache.set(path, { img, offsetX: minX, offsetY: minY });
+```
+
+**新方案**（v1.3）：
+```typescript
+// 使用 DOMParser 解析为指令树 → 透明背景保留
+const parsed = parseSVG(svgText);
+this.flexCache.set(path, {
+  commands: parsed.commands,
+  viewBox: parsed.viewBox,
+  offsetX: parsed.viewBox.vx,
+  offsetY: parsed.viewBox.vy,
+});
+```
+
+
+## 七、Phase 2 渲染管线（v1.3 补充 Flex 指令执行）
+
+### 7.1 Flex 层绘制方式变更
+
+**原方式**（v1.2）：
+```typescript
+// drawImage 方式（依赖 flexUnit.img）
+ctx.drawImage(flexUnit.img, dx, dy, dw, dh);
+```
+
+**新方式**（v1.3）：
+```typescript
+// 指令树执行方式（不依赖位图）
+function drawFlexCommands(
+  ctx: CanvasRenderingContext2D,
+  comp: ComponentInstance,
+  flexUnit: FlexUnitCache,
+  partParams: Record<string, any>
+): void {
+  const { commands, viewBox, offsetX, offsetY } = flexUnit;
+  const { vw, vh } = viewBox;
+  const scaleX = comp.w / vw;
+  const scaleY = comp.h / vh;
+  const baseX = comp.x + offsetX + (partParams.offsetX || 0);
+  const baseY = comp.y + offsetY + (partParams.offsetY || 0);
+
+  for (const cmd of commands) {
+    const color = partParams.color || cmd.fill;
+    const opacity = partParams.opacity !== undefined ? partParams.opacity : cmd.opacity;
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    // 执行具体图元指令...
+    ctx.restore();
+  }
+}
+```
+
+### 7.2 6层绘制顺序（v1.3 确认）
+
+| 层号 | 层名 | 绘制方式 | 更新频率 |
+|------|------|----------|----------|
+| 0 | 背景层 | `fillRect` + 网格线 | 不变 |
+| 1 | 连线层 | `moveTo/lineTo` + 端点圆点 | 连线变化时 |
+| 2 | Fix 层 | `drawImage(fixImg)` | 元件位置/类型变化时 |
+| 3 | Flex 层 | `drawFlexCommands()` 执行指令树 | 元件状态/参数变化时 |
+| 4 | 临时层 | 预留（Phase 3） | 鼠标移动时 |
+| 5 | 覆盖层 | 预留（Phase 3） | 鼠标移动时 |
+
+
+## 十、开发路线图（v1.3 更新版）
+
+| 阶段 | 任务 | v1.3 新增/变更内容 |
+| :--- | :--- | :--- |
+| **Phase 0** | Tauri v2 骨架 + Vite 配置 + 目录结构 | — |
+| **Phase 1** | ComponentLoader + viewBox 解析 + 注册表构建 | **新增：SVGParser.ts（DOMParser 方案）** |
+| **Phase 2** | Canvas 基础渲染（fix + flex 分层绘制） | **变更：Flex 层使用指令树执行，替代 drawImage** |
+| **Phase 3** | 前端交互系统（拖拽、放置、连线、选中） | — |
+| **Phase 4** | Rust 纯数学求解器 | — |
+| **Phase 5** | 常驻 Worker + invoke + Channel 联调 | — |
+| **Phase 6** | 状态转换规则引擎 | — |
+| **Phase 7** | 参数面板动态生成 + 热更新 | — |
+| **Phase 8** | AC/Transient 求解器 + 电流粒子动画 | — |
+| **Phase 9** | 浮地高亮、JSON 导入导出、性能优化 | — |
+
+
+## 十二、v1.3 总结
+
+**v1.3 在 v1.2 基础上新增/变更了以下内容：**
+
+| 补充项 | 说明 |
+| :--- | :--- |
+| **DOMParser SVG 解析方案** | 新增 `SVGParser.ts`，将 `flex/*.svg` 解析为指令树，彻底解决透明背景丢失问题 |
+| **FlexUnitCache 类型重构** | 从 `{ img, width, height, offsetX, offsetY }` 改为 `{ commands, viewBox, offsetX, offsetY }` |
+| **Flex 层指令执行** | 渲染时执行 `SVGCommand[]`，而非 `drawImage`，支持运行时动态修改颜色/透明度/旋转/位移 |
+| **单 HTML 验证** | 独立验证文件确认 DOMParser 方案透明背景保留，fix+flex 叠加不遮挡 |
+
+**v1.3 做到了**：
+- v1.2 所有内容全部保留
+- 透明背景问题彻底解决
+- Flex 渲染方式从位图驱动升级为矢量指令驱动
+- 为后续缩放、颜色动态控制打下坚实基础
+
+
+## 十三、当前进度与下一步（现场状态）
+
+### 已完成
+
+| 阶段 | 任务 | 状态 |
+| :--- | :--- | :--- |
+| Phase 0 | Tauri v2 骨架 + UI 布局 | ✅ 已完成 |
+| Phase 1 | ComponentLoader + meta.json 加载 | ✅ 已完成 |
+| Phase 1 | SVGParser.ts（DOMParser 方案） | ✅ 已完成 |
+| Phase 2 Task 2.1 | 最终 UI 布局（右侧面板） | ✅ 已完成 |
+| Phase 2 Task 2.2 | CanvasManager（尺寸自适应） | ✅ 已完成 |
+| Phase 2 Task 2.2.5 | DOMParser 单 HTML 验证 | ✅ 已完成 |
+| Phase 2 Task 2.2.5 | 集成 SVGParser 到 ComponentLoader | ✅ 已完成 |
+
+### 待完成
+
+| 阶段 | 任务 | 状态 |
+| :--- | :--- | :--- |
+| **Phase 2 Task 2.3** | **坐标映射工具（coordinates.ts）** | ⬜ 待开始 |
+| Phase 2 Task 2.4 | CircuitRenderer 分层渲染 | ⬜ 待开始 |
+| Phase 2 Task 2.5 | Overlay 层预留 | ⬜ 待开始 |
+| Phase 2 Task 2.6 | 集成到 main.ts（测试电路渲染） | ⬜ 待开始 |
+| Phase 2 Task 2.7 | 状态栏联动 | ⬜ 待开始 |
+| Phase 2 Task 2.8 | 验收测试 | ⬜ 待开始 |
+
+---
+
+**以上修改是针对flexs.svg，fix.svg仍然是直接转为位图渲染**

@@ -1,3 +1,7 @@
+// src/types.ts
+
+import type { SVGCommand } from './loader/SVGParser';
+
 // ============================================================
 // 基础类型
 // ============================================================
@@ -181,9 +185,8 @@ export interface SolverOutput {
 // ============================================================
 
 export interface FlexUnitCache {
-  img: HTMLImageElement;
+  commands: SVGCommand[];
+  viewBox: { vx: number; vy: number; vw: number; vh: number };
   offsetX: number;
   offsetY: number;
-  width: number;
-  height: number;
 }
