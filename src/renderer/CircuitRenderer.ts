@@ -2,29 +2,35 @@
 
 import type { ComponentLoader } from '../loader/ComponentLoader';
 import type { Circuit, ComponentInstance, FlexUnitCache } from '../types';
-import type { Viewport } from '../utils/coordinates';
+//import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
 
 export class CircuitRenderer {
   private ctx: CanvasRenderingContext2D;
   private loader: ComponentLoader;
-  private viewport: Viewport;
+  //private viewport: Viewport;
 
   constructor(
     ctx: CanvasRenderingContext2D,
     loader: ComponentLoader,
-    viewport: Viewport
+    // viewport: Viewport
   ) {
     this.ctx = ctx;
     this.loader = loader;
-    this.viewport = viewport;
+    // this.viewport = viewport;
   }
 
-  render(circuit: Circuit, width: number, height: number): void {
+  render(
+    circuit: Circuit,
+    width: number,
+    height: number,
+    preview?: { type: string; x: number; y: number }
+  ): void {
     this.drawBackground(width, height);
     this.drawWires(circuit);
     this.drawFixLayers(circuit);
     this.drawFlexLayers(circuit);
+    if (preview) this.drawPreview(preview);
     // 层 4、5 预留 Phase 3
   }
 
@@ -74,33 +80,36 @@ export class CircuitRenderer {
     }
   }
 
+  private drawOneFix(comp: ComponentInstance): void {
+    const fixImg = this.loader.getFixImage(comp.type);
+    if (fixImg) {
+      this.ctx.drawImage(fixImg, comp.x, comp.y, comp.w, comp.h);
+    }
+  }
+
   private drawFixLayers(circuit: Circuit): void {
-    const ctx = this.ctx;
     for (const comp of circuit.components) {
-      const fixImg = this.loader.getFixImage(comp.type);
-      if (fixImg) {
-        ctx.drawImage(fixImg, comp.x, comp.y, comp.w, comp.h);
-      }
+      this.drawOneFix(comp);
+    }
+  }
+
+  private drawOneFlex(comp: ComponentInstance): void {
+    const def = this.loader.getDefinition(comp.type);
+    if (!def?.flex) return;
+    const stateKey = comp.state || def.visual.default_state || 'default';
+    const state = def.visual.states[stateKey];
+    if (!state) return;
+    for (const [unitId] of Object.entries(def.flex.units)) {
+      const flexUnit = this.loader.getFlexUnit(comp.type, unitId);
+      if (!flexUnit) continue;
+      const partParams = state.parts?.[unitId] || {};
+      this.drawFlexUnit(this.ctx, comp, flexUnit, partParams);
     }
   }
 
   private drawFlexLayers(circuit: Circuit): void {
-    const ctx = this.ctx;
     for (const comp of circuit.components) {
-      const def = this.loader.getDefinition(comp.type);
-      if (!def?.flex) continue;
-
-      const stateKey = comp.state || def.visual.default_state || 'default';
-      const state = def.visual.states[stateKey];
-      if (!state) continue;
-
-      for (const [unitId] of Object.entries(def.flex.units)) {
-        const flexUnit = this.loader.getFlexUnit(comp.type, unitId);
-        if (!flexUnit) continue;
-
-        const partParams = state.parts?.[unitId] || {};
-        this.drawFlexUnit(ctx, comp, flexUnit, partParams);
-      }
+      this.drawOneFlex(comp);
     }
   }
 
@@ -129,6 +138,43 @@ export class CircuitRenderer {
     } else {
       this.executeCommands(ctx, comp, commands, scaleX, scaleY, partParams);
     }
+  }
+
+  private drawPreview(preview: { type: string; x: number; y: number }): void {
+    const ctx = this.ctx;
+    const def = this.loader.getDefinition(preview.type);
+    if (!def) return;
+
+    const w = 60;
+    const h = 40;
+
+    // 构造一个临时的 ComponentInstance
+    const fakeComp: ComponentInstance = {
+      id: -1,
+      type: preview.type,
+      x: preview.x,
+      y: preview.y,
+      w,
+      h,
+      params: {},
+      state: def.visual.default_state || 'default',
+    };
+
+    // 半透明绘制
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    this.drawOneFix(fakeComp);
+    this.drawOneFlex(fakeComp);
+    ctx.restore();
+
+    // 蓝色虚线边框
+    ctx.save();
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(preview.x - 2, preview.y - 2, w + 4, h + 4);
+    ctx.setLineDash([]);
+    ctx.restore();
   }
 
   private executeCommands(

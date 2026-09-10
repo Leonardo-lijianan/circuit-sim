@@ -1,15 +1,23 @@
 // src/main.ts
+/*
+1. 先创建所有实例（loader → canvas → 核心模块 → UI → mouse）
+2. 再注册回调（因为回调需要引用所有实例）
+3. 最后初始化数据（数据变化会自动触发回调 → 重绘）
+4. 手动首次渲染（兜底，防止回调没触发时画布空白）
+*/
 
 import { ComponentLoader } from './loader/ComponentLoader';
 import { CanvasManager } from './renderer/CanvasManager';
 import { CircuitRenderer } from './renderer/CircuitRenderer';
-import { CircuitManager } from './manager/CircuitManager';  // phase3新增 CircuitManager
+import { RenderCoordinator } from './renderer/RenderCoordinator';
+import { CircuitManager } from './manager/CircuitManager';
 import { PanelManager } from './ui/PanelManager';
 import { ToolbarManager } from './ui/ToolbarManager';
 import { StatusBarManager } from './ui/StatusBarManager';
 import { KeyboardManager } from './io/KeyboardManager';
+import { MouseManager } from './io/MouseManager';
 import { InteractionManager } from './interaction/InteractionManager';
-import { defaultViewport, screenToLogic } from './utils/coordinates';
+import { defaultViewport } from './utils/coordinates';
 import { hitTestCircle, hitTestRect, hitTestSnap, hitTest } from './utils/hitTest';
 import type { Circuit } from './types';
 
@@ -35,34 +43,82 @@ const viewport = defaultViewport();
 console.log(`📐 Canvas 尺寸: ${canvasManager.getSize().width} × ${canvasManager.getSize().height}`);
 
 // ============================================================
-// 3. 创建交互核心
+// 3. 核心模块
 // ============================================================
 
+// 3.1 交互核心
 const interaction = new InteractionManager();
 
-// ============================================================
-// 4. 数据管理 (Phase 3 新增)
-// ============================================================
-
+// 3.2 数据管理 (Phase 3 新增)
 const circuitManager = new CircuitManager(loader);
 
+// 3.3 渲染器
+const renderer = new CircuitRenderer(ctx, loader);
+
+// 3.4 渲染协调器
+const coordinator = new RenderCoordinator({
+  renderer,
+  canvasManager,
+  circuitManager,
+  interaction,
+});
+
 // ============================================================
-// 5. UI 管理器 (Phase 2 新增, Phase 3 后由 CircuitManager 管理)
+// 4. UI 管理器 (实例化即自动绑定)
 // ============================================================
 
-/* const toolbar = */ new ToolbarManager(interaction);      // 自动绑定模式按钮
-/* const keyboard = */ new KeyboardManager(interaction);    // 自动绑定快捷键
-/* const panel = */ new PanelManager(loader); // phase2新增 创建面板管理器
+new ToolbarManager(interaction);
+new KeyboardManager(interaction);
+const panel = new PanelManager(loader);
 const statusBar = new StatusBarManager();
 
 // ============================================================
-// 5. 创建渲染器
+// 5. 鼠标事件管理
 // ============================================================
 
-const renderer = new CircuitRenderer(ctx, loader, viewport);
+/* const mouseManager = */ new MouseManager({
+  canvas,
+  viewport,
+  interaction,
+  statusBar,
+  coordinator,
+});
 
 // ============================================================
-// 6. 构造测试电路 （Phase 3: 改用 CircuitManager 管理）
+// 6. 注册回调（数据 / 模式 / 窗口变化 → 触发重绘）
+// ============================================================
+
+// 6.1 数据更新 → 更新状态栏 + 重绘
+circuitManager.onUpdate((circuit: Circuit) => {
+  statusBar.updateCircuitStats(circuit);
+  coordinator.render();
+});
+
+// 6.2 pending 变化 → 重绘（清除预览或显示新预览）
+interaction.onPendingChange(() => {
+  coordinator.render();
+});
+
+// 6.3 窗口尺寸变化 → 更新状态栏 + 重绘
+canvasManager.onResize(() => {
+  statusBar.updateCircuitStats(circuitManager.getCircuit());
+  coordinator.render();
+});
+
+// 6.4 Place 模式回调：放置元件
+interaction.onPlace((type: string, x: number, y: number) => {
+  const comp = circuitManager.addComponent(type, x, y);
+  if (comp) {
+    console.log(`✅ 放置元件: ${type} at (${x}, ${y})`);
+    circuitManager.selectComponent(comp.id);
+  }
+});
+
+// 6.5 注入 InteractionManager 到 PanelManager
+panel.setInteraction(interaction);
+
+// ============================================================
+// 7. 构造测试电路
 // ============================================================
 
 // LED
@@ -71,12 +127,14 @@ if (led) {
   led.params.forward_voltage = 1.8;
   led.state = 'off';
 }
+
 // 电阻
 const resistor = circuitManager.addComponent('resistor', 400, 200);
 if (resistor) {
   resistor.params.resistance = 1000;
   resistor.state = 'default';
 }
+
 // 连线
 if (led && resistor) {
   circuitManager.addWire(
@@ -86,44 +144,11 @@ if (led && resistor) {
 }
 
 // ============================================================
-// 7. 渲染 （Phase 3更新：由 CircuitManager 管理）
+// 8. 首次渲染
 // ============================================================
 
-// 注册更新回调：数据变化时自动重绘  更新状态栏
-circuitManager.onUpdate((circuit: Circuit) => {
-  const { width, height } = canvasManager.getSize();
-  renderer.render(circuit, width, height);
-  statusBar.updateCircuitStats(circuit);
-});
-
-// 首次渲染（手动触发一次）
-const { width, height } = canvasManager.getSize();
-renderer.render(circuitManager.getCircuit(), width, height);
 statusBar.updateCircuitStats(circuitManager.getCircuit());
-
-
-/**
- * ★ 关键修复：注册 resize 回调，窗口变化时自动重绘,不然画布尺寸变化后不会自动重绘，导致显示异常。
- * 监听画布尺寸变化。
- * 注意：直接传入 render 引用（而非箭头函数包裹），
- * 便于在销毁时调用 off(render) 精准清除；
- * 当前 render 无参数且不依赖 this，故安全性等同箭头函数。
- */
-canvasManager.onResize(() => {
-  const { width, height } = canvasManager.getSize();
-  const circuit = circuitManager.getCircuit();
-  renderer.render(circuit, width, height);
-  statusBar.updateCircuitStats(circuit);
-});
-
-// ============================================================
-// 8. 鼠标坐标 → 状态栏
-// ============================================================
-
-canvas.addEventListener('mousemove', (event) => {
-  const logicPos = screenToLogic(event.clientX, event.clientY, canvas, viewport);
-  statusBar.updateCursorPos(logicPos.x, logicPos.y);
-});
+coordinator.render();
 
 // ============================================================
 // 9. 调试接口
@@ -137,23 +162,18 @@ let ledOn = false;
   ledOn = !ledOn;
   led.state = ledOn ? 'on' : 'off';
   console.log(`💡 LED 状态: ${led.state}`);
-  circuitManager.forceUpdate();  // 触发重绘
+  circuitManager.forceUpdate();
 };
 
 (window as any).__circuit = circuitManager.getCircuit();
 (window as any).__loader = loader;
 (window as any).__renderer = renderer;
 (window as any).__interaction = interaction;
-// 这个有selectComponent、getSelectedId()、getSelected()、
-// getWiresForComponent()、addComponent()、removeComponent()、
-// moveComponent()、addWire()、removeWire()、updateParam() 等方法
 (window as any).__manager = circuitManager;
-// Phase 3 Task 3.3（碰撞检测）新增
 (window as any).__hitTestCircle = hitTestCircle;
 (window as any).__hitTestRect = hitTestRect;
 (window as any).__hitTestSnap = hitTestSnap;
 (window as any).__hitTest = hitTest;
 
-// Phase 2-新增&Phase 3-改用 CircuitManager 管理
-console.log('✅ 系统就绪：当前进度： Phase 3 Task 3.3（碰撞检测）');
+console.log('✅ 系统就绪：当前进度： Phase 3 Task 3.4（放置元件）');
 console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');

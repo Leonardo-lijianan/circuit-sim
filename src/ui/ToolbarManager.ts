@@ -40,7 +40,7 @@ export class ToolbarManager {
         wire: '连线',
         pan: '平移',
       };
-      modeDisplay.textContent = `模式: ${modeNames[mode]}`;
+      modeDisplay.textContent = modeNames[mode];
     }
   }
 }

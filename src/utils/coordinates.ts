@@ -35,11 +35,15 @@ export function screenToCanvas(
 ): { x: number; y: number } {
   const rect = canvas.getBoundingClientRect();
   // canvas.width / rect.width 是 CSS 缩放比（处理 Retina 屏等）
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
+  // const scaleX = canvas.width / rect.width;
+  // const scaleY = canvas.height / rect.height;
   return {
-    x: (screenX - rect.left) * scaleX,
-    y: (screenY - rect.top) * scaleY,
+    // 返回 CSS 像素（逻辑像素），与 Canvas 渲染坐标系一致
+    // 修改原因：screenToCanvas 返回的是物理像素（canvas.width 是物理像素），
+    // 但渲染时用的是逻辑/CSS 像素（Canvas 上下文已经用 ctx.setTransform(dpr, ...) 缩放过）。
+    // 两者差了一个 dpr 倍（你的屏幕上 dpr = 1.25），导致坐标偏大，元件出现在右下方。
+    x: screenX - rect.left,
+    y: screenY - rect.top,
   };
 }
 
@@ -115,10 +119,11 @@ export function logicToScreen(
 ): { x: number; y: number } {
   const canvasPos = logicToCanvas(logicX, logicY, viewport);
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
+  // const scaleX = canvas.width / rect.width;
+  // const scaleY = canvas.height / rect.height;
   return {
-    x: canvasPos.x / scaleX + rect.left,
-    y: canvasPos.y / scaleY + rect.top,
+    // 修改原因：与 screenToCanvas 对应，返回 CSS 像素（逻辑像素），与 Canvas 渲染坐标系一致
+    x: canvasPos.x + rect.left,
+    y: canvasPos.y + rect.top,
   };
 }

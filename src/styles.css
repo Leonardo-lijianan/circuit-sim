@@ -256,6 +256,20 @@ body {
   text-align: center;
 }
 
+.library-item.active {
+  background: #89b4fa;
+  color: #11111b;
+}
+
+.library-item.active .name {
+  color: #11111b;
+}
+
+.library-item.active .badge {
+  background: #11111b;
+  color: #89b4fa;
+}
+
 /* ---- 参数面板 ---- */
 .param-group {
   margin-bottom: 14px;

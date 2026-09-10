@@ -5,8 +5,9 @@ import type { Mode, PendingAction } from '../types';
 export class InteractionManager {
   private mode: Mode = 'select';
   private pending: PendingAction = null;
-  private onModeChangeCallback?: (mode: Mode) => void;
-  private onPendingChangeCallback?: (pending: PendingAction) => void;
+  private onModeChangeCallbacks: ((mode: Mode) => void)[] = []; // 支持多订阅者！！！
+  private onPendingChangeCallbacks: ((pending: PendingAction) => void)[] = [];
+  private onPlaceCallback?: (type: string, x: number, y: number) => void;  // ← Task 3.4 新增
 
   // ============================================================
   // 模式管理
@@ -34,7 +35,7 @@ export class InteractionManager {
 
     this.mode = newMode;
     this.updateCursor();
-    this.onModeChangeCallback?.(newMode);
+    for (const cb of this.onModeChangeCallbacks) cb(newMode);
   }
 
   // ============================================================
@@ -47,12 +48,12 @@ export class InteractionManager {
 
   setPending(action: PendingAction): void {
     this.pending = action;
-    this.onPendingChangeCallback?.(action);
+    for (const cb of this.onPendingChangeCallbacks) cb(action);
   }
 
   clearPending(): void {
     this.pending = null;
-    this.onPendingChangeCallback?.(null);
+    for (const cb of this.onPendingChangeCallbacks) cb(null);
   }
 
   // ============================================================
@@ -100,12 +101,70 @@ export class InteractionManager {
   // ============================================================
 
   onModeChange(callback: (mode: Mode) => void): void {
-    this.onModeChangeCallback = callback;
+    this.onModeChangeCallbacks.push(callback);
   }
 
   onPendingChange(callback: (pending: PendingAction) => void): void {
-    this.onPendingChangeCallback = callback;
+    this.onPendingChangeCallbacks.push(callback);
   }
+
+  // ============================================================
+  // Place 模式事件处理（由 Canvas 事件调用）
+  // ============================================================
+
+  /**
+   * 处理鼠标按下事件（由 Canvas 事件监听调用）
+   * 根据当前模式分发到不同的处理逻辑
+   */
+  handleMouseDown(x: number, y: number): void {
+    switch (this.mode) {
+      case 'place':
+        this.handlePlaceClick(x, y);
+        break;
+      case 'wire':
+        // Phase 3 后续 Task 实现
+        break;
+      case 'select':
+        // Phase 3 后续 Task 实现（选中/拖拽）
+        break;
+      default:
+        break;
+    }
+  }
+
+  /**
+   * Place 模式：点击画布放置元件
+   */
+  private handlePlaceClick(x: number, y: number): void {
+    if (!this.isPlacePending()) {
+      console.warn('⚠️ Place 模式下没有待放置的元件类型');
+      return;
+    }
+
+    const type = this.getPlaceType();
+    if (!type) return;
+
+    // 通过回调通知外部创建元件
+    if (this.onPlaceCallback) {
+      // 计算元件左上角位置（居中放置）
+      const w = 60;
+      const h = 40;
+      this.onPlaceCallback(type, x - w / 2, y - h / 2);
+    }
+
+    // 放置后清理 pending 并回到 Select 模式
+    this.clearPending();
+    this.setMode('select');
+  }
+
+  // ============================================================
+  // Place 模式回调注册
+  // ============================================================
+
+  onPlace(callback: (type: string, x: number, y: number) => void): void {
+    this.onPlaceCallback = callback;
+  }
+
 
   // ============================================================
   // 私有方法

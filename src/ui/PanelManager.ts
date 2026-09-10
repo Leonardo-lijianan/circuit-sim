@@ -1,7 +1,8 @@
 // src/ui/PanelManager.ts
 
 import type { ComponentLoader } from '../loader/ComponentLoader';
-import type { ComponentInstance } from '../types';
+import type { PendingAction, ComponentInstance } from '../types';
+import type { InteractionManager } from '../interaction/InteractionManager';  // ← Task 3.4 新增
 
 export type PanelMode = 'library' | 'params' | 'empty';
 
@@ -10,6 +11,7 @@ export class PanelManager {
   private panelIcon: HTMLElement;
   private panelTitle: HTMLElement;
   private loader: ComponentLoader;
+  private interaction: InteractionManager | null = null;  // ← 新增
 
   constructor(loader: ComponentLoader) {
     this.loader = loader;
@@ -29,6 +31,32 @@ export class PanelManager {
     // 默认显示元件库
     this.showLibrary();
   }
+
+  // ← 新增：设置 InteractionManager 引用 (Task 3.4)
+  setInteraction(interaction: InteractionManager): void {
+    this.interaction = interaction;
+    // 监听 pending 变化，更新高亮
+   this.interaction.onPendingChange((pending) => {
+     this.updateActiveItem(pending);
+   });
+  }
+
+  /**
+  * 根据 pending 更新元件库条目的高亮状态
+  */
+ private updateActiveItem(pending: PendingAction): void {
+   // 清除所有条目的 active
+   const items = this.panelContent.querySelectorAll('.library-item');
+   items.forEach((el) => el.classList.remove('active'));
+
+   // 如果当前是 place pending，给对应条目加 active
+   if (pending?.kind === 'place') {
+     const target = this.panelContent.querySelector(
+       `.library-item[data-type="${pending.type}"]`
+     );
+     target?.classList.add('active');
+   }
+ }
 
   /**
    * 显示元件库
@@ -81,11 +109,16 @@ export class PanelManager {
       badge.textContent = `${def.pins.length}pin`;
       item.appendChild(badge);
 
-      // 点击进入放置模式（Phase 3 实现，先留空）
+      // ★ 点击元件条目 → 进入 Place 模式 （Task 3.4）
       item.addEventListener('click', () => {
-        console.log(`📦 选择元件: ${def.name} (${def.label})`);
-        // TODO: Phase 3 - 进入 Place 模式
-        // 目前只打印日志
+        if (this.interaction) {
+          // 设置待放置类型
+          this.interaction.setPending({ kind: 'place', type: def.name });
+          this.interaction.setMode('place');
+          console.log(`📦 放置模式: ${def.label} (${def.name})`);
+        } else {
+          console.warn('⚠️ InteractionManager 未设置');
+        }
       });
 
       this.panelContent.appendChild(item);

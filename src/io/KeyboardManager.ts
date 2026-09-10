@@ -27,9 +27,9 @@ export class KeyboardManager {
       case '2':
         this.interaction.setMode('wire');
         break;
-      case '3':
-        this.interaction.setMode('place');
-        break;
+      // case '3':
+      //   this.interaction.setMode('place');
+      //   break;
       case 'Escape':
         if (this.interaction.isPending()) {
           this.interaction.clearPending();

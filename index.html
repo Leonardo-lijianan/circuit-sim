@@ -13,7 +13,13 @@
 
     <!-- ===== 工具栏 ===== -->
     <div id="toolbar">
-      <span class="title">⚡ 电路仿真</span>
+      <!-- <span class="title">⚡ 电路仿真</span> -->
+
+      <!-- <div class="sep"></div> -->
+
+      <!-- 预留：打开/保存 (Phase 9) -->
+      <button id="btnOpen" style="opacity:0.4;" disabled>📂 打开</button>
+      <button id="btnSave" style="opacity:0.4;" disabled>💾 保存</button>
 
       <div class="sep"></div>
 
@@ -21,7 +27,7 @@
       <div class="mode-group">
         <button id="modeSelect" class="active" data-mode="select">选择</button>
         <button id="modeWire" data-mode="wire">连线</button>
-        <button id="modePlace" data-mode="place">放置</button>
+        <!-- <button id="modePlace" data-mode="place">放置</button> -->
       </div>
 
       <div class="sep"></div>
@@ -36,14 +42,6 @@
       <div class="sep"></div>
 
       <button id="btnClear" class="danger">🗑 清空</button>
-
-      <div class="spacer"></div>
-
-      <!-- 预留：导入/导出 (Phase 9) -->
-      <button id="btnImport" style="opacity:0.4;" disabled>📂 导入</button>
-      <button id="btnExport" style="opacity:0.4;" disabled>💾 导出</button>
-
-      <span id="modeDisplay" style="font-size:12px;color:#6c7086;margin-left:4px;">模式: 选择</span>
     </div>
 
     <!-- ===== 主内容区 ===== -->
@@ -72,14 +70,16 @@
 
     <!-- ===== 状态栏 ===== -->
     <div id="statusbar">
-      <span class="item">元件: <span class="value" id="compCount">0</span></span>
-      <span class="item">连线: <span class="value" id="wireCount">0</span></span>
+      <span  class="item">模式: <span class="value" id="modeDisplay">选择</span></span>
       <span class="item">
         <span class="status-dot idle" id="statusDot"></span>
         仿真: <span class="value" id="simStatus">停止</span>
       </span>
+      
       <div class="spacer"></div>
-      <span class="item" id="cursorPos">(0, 0)</span>
+      <span class="item">元件: <span class="value" id="compCount">0</span></span>
+      <span class="item">连线: <span class="value" id="wireCount">0</span></span>
+      <span class="value" id="cursorPos">(0, 0)</span>
     </div>
 
   </div>
