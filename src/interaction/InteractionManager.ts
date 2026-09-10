@@ -1,6 +1,8 @@
 // src/interaction/InteractionManager.ts
 
-import type { Mode, PendingAction } from '../types';
+import type { Mode, PendingAction, ComponentInstance } from '../types';
+import type { ComponentLoader } from '../loader/ComponentLoader';
+import { hitTest } from '../utils/hitTest';
 
 export class InteractionManager {
   private mode: Mode = 'select';
@@ -8,6 +10,29 @@ export class InteractionManager {
   private onModeChangeCallbacks: ((mode: Mode) => void)[] = []; // 支持多订阅者！！！
   private onPendingChangeCallbacks: ((pending: PendingAction) => void)[] = [];
   private onPlaceCallback?: (type: string, x: number, y: number) => void;  // ← Task 3.4 新增
+
+  // 拖拽状态
+  private dragState: {
+    compId: number;
+    mouseStartX: number;
+    mouseStartY: number;
+    compStartX: number;
+    compStartY: number;
+    isDragging: boolean;
+  } | null = null;
+
+  // 依赖注入（用于 hitTest）
+  private loader: ComponentLoader | null = null;
+  private getComponents: (() => ComponentInstance[]) | null = null;
+
+  // Select 模式回调
+  private onSelectCallback?: (id: number | null) => void;
+  private onMoveCallback?: (id: number, x: number, y: number) => void;
+
+  constructor() {
+    // 初始化光标为当前模式对应的样式（默认 Select → default）
+    this.updateCursor();
+  }
 
   // ============================================================
   // 模式管理
@@ -18,6 +43,9 @@ export class InteractionManager {
   }
 
   setMode(newMode: Mode): void {
+    // 模式未变，直接返回（避免误清 pending 和误改光标）
+    if (newMode === this.mode) return;
+
     // 如果切换到 Select，清理所有待完成操作
     if (newMode === 'select') {
       this.clearPending();
@@ -122,14 +150,100 @@ export class InteractionManager {
         this.handlePlaceClick(x, y);
         break;
       case 'wire':
-        // Phase 3 后续 Task 实现
+        // Phase 3 Task 3.6 实现
         break;
       case 'select':
-        // Phase 3 后续 Task 实现（选中/拖拽）
+        // Phase 3 Task 3.5 实现（选中/拖拽）
+        this.handleSelectMouseDown(x, y);
         break;
       default:
         break;
     }
+  }
+
+
+  /**
+   * 处理鼠标移动事件（由 MouseManager 调用）
+   */
+  handleMouseMove(x: number, y: number): void {
+    if (this.mode === 'select') {
+      this.handleSelectMouseMove(x, y);
+    }
+  }
+
+  /**
+   * 处理鼠标松开事件（由 MouseManager 调用）
+   */
+  handleMouseUp(_x: number, _y: number): void {
+    if (this.mode === 'select') {
+      this.handleSelectMouseUp();
+    }
+  }
+
+  // ============================================================
+  // Select 模式：选中  拖拽
+  // ============================================================
+
+  private handleSelectMouseDown(x: number, y: number): void {
+    if (!this.loader || !this.getComponents) {
+      console.warn('⚠️ InteractionManager 未注入 context');
+      return;
+    }
+
+    const components = this.getComponents();
+    const result = hitTest(x, y, components, this.loader);
+
+    if (result.kind === 'component') {
+      const comp = components.find(c => c.id === result.id);
+      if (!comp) return;
+
+      // 选中
+      this.onSelectCallback?.(result.id);
+
+      // 记录拖拽起始状态
+      this.dragState = {
+        compId: result.id,
+        mouseStartX: x,
+        mouseStartY: y,
+        compStartX: comp.x,
+        compStartY: comp.y,
+        isDragging: false,
+      };
+    } else if (result.kind === 'pin') {
+      // Phase 3.6 实现：自动进入 Wire 模式
+      // 暂时忽略
+    } else {
+      // 点击空白 → 取消选中
+      this.onSelectCallback?.(null);
+    }
+  }
+
+  private handleSelectMouseMove(x: number, y: number): void {
+    if (!this.dragState) return;
+
+    const dx = x - this.dragState.mouseStartX;
+    const dy = y - this.dragState.mouseStartY;
+
+    // 移动超过 5px 才算真正拖拽
+    if (!this.dragState.isDragging && Math.sqrt(dx * dx + dy * dy) > 5) {
+      this.dragState.isDragging = true;
+      this.updateCursor();
+    }
+
+    if (this.dragState.isDragging) {
+      this.onMoveCallback?.(
+        this.dragState.compId,
+        this.dragState.compStartX + dx,
+        this.dragState.compStartY + dy
+      );
+    }
+  }
+
+  private handleSelectMouseUp(): void {
+    if (!this.dragState) return;
+
+    this.dragState = null;
+    this.updateCursor();
   }
 
   /**
@@ -166,6 +280,23 @@ export class InteractionManager {
   }
 
 
+  /**
+   * 注入 hitTest 所需的上下文
+   */
+  setContext(loader: ComponentLoader, getComponents: () => ComponentInstance[]): void {
+    this.loader = loader;
+    this.getComponents = getComponents;
+  }
+
+  onSelect(callback: (id: number | null) => void): void {
+    this.onSelectCallback = callback;
+  }
+
+  onMove(callback: (id: number, x: number, y: number) => void): void {
+    this.onMoveCallback = callback;
+  }
+
+
   // ============================================================
   // 私有方法
   // ============================================================
@@ -173,6 +304,12 @@ export class InteractionManager {
   private updateCursor(): void {
     const canvas = document.querySelector('canvas');
     if (!canvas) return;
+
+    // 拖拽优先级最高
+    if (this.dragState?.isDragging) {
+      canvas.style.cursor = 'grabbing';
+      return;
+    }
 
     switch (this.mode) {
       case 'select':

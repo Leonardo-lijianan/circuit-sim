@@ -31,6 +31,7 @@ export class MouseManager {
   private bindEvents(): void {
     this.canvas.addEventListener('mousedown', this.handleMouseDown);
     this.canvas.addEventListener('mousemove', this.handleMouseMove);
+    this.canvas.addEventListener('mouseup', this.handleMouseUp);
     this.canvas.addEventListener('mouseleave', this.handleMouseLeave);
   }
 
@@ -45,11 +46,21 @@ export class MouseManager {
     this.coordinator.setMousePos(pos);
 
 
+    // 分发到 interaction（拖拽需要）
+    this.interaction.handleMouseMove(pos.x, pos.y);
+
+
     // 只有处于 Place 模式时才需要重绘（显示预览）
     if (this.interaction.isPlacePending()) {
       this.coordinator.render();
     }
   };
+
+  private handleMouseUp = (event: MouseEvent): void => {
+    const pos = screenToLogic(event.clientX, event.clientY, this.canvas, this.viewport);
+    this.interaction.handleMouseUp(pos.x, pos.y);
+  };
+
 
   private handleMouseLeave = (): void => {
     this.coordinator.setMousePos(null);

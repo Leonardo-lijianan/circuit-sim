@@ -84,11 +84,14 @@ const statusBar = new StatusBarManager();
   coordinator,
 });
 
+// 注入 hitTest 上下文
+interaction.setContext(loader, () => circuitManager.getComponents());
+
 // ============================================================
 // 6. 注册回调（数据 / 模式 / 窗口变化 → 触发重绘）
 // ============================================================
 
-// 6.1 数据更新 → 更新状态栏 + 重绘
+// 6.1 数据更新 → 更新状态栏  重绘
 circuitManager.onUpdate((circuit: Circuit) => {
   statusBar.updateCircuitStats(circuit);
   coordinator.render();
@@ -112,6 +115,17 @@ interaction.onPlace((type: string, x: number, y: number) => {
     console.log(`✅ 放置元件: ${type} at (${x}, ${y})`);
     circuitManager.selectComponent(comp.id);
   }
+});
+
+
+// Select 模式：选中元件
+interaction.onSelect((id) => {
+  circuitManager.selectComponent(id);
+});
+
+// Select 模式：拖拽移动
+interaction.onMove((id, x, y) => {
+  circuitManager.moveComponent(id, x, y);
 });
 
 // 6.5 注入 InteractionManager 到 PanelManager
