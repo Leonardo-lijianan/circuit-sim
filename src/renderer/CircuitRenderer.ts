@@ -2,7 +2,7 @@
 
 import type { ComponentLoader } from '../loader/ComponentLoader';
 import type { Circuit, ComponentInstance, FlexUnitCache, PinRef } from '../types';
-//import type { Viewport } from '../utils/coordinates';
+import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
 
 export class CircuitRenderer {
@@ -24,13 +24,26 @@ export class CircuitRenderer {
     circuit: Circuit,
     width: number,
     height: number,
+    viewport: Viewport,
     overlays?: {
       place?: { type: string; x: number; y: number };
       wire?: { startX: number; startY: number; endX: number; endY: number; snapped: boolean };
       hoverPin?: PinRef;
     }
   ): void {
-    this.drawBackground(width, height);
+    const ctx = this.ctx;
+
+    // 1. 清屏（屏幕坐标系）
+    ctx.fillStyle = '#1e1e2e';
+    ctx.fillRect(0, 0, width, height);
+
+    // 2. 应用视口变换
+    ctx.save();
+    ctx.translate(viewport.offsetX, viewport.offsetY);
+    ctx.scale(viewport.scale, viewport.scale);
+
+    // 3. 绘制内容（逻辑坐标系）
+    this.drawGrid(width, height, viewport);
     this.drawWires(circuit);
     this.drawFixLayers(circuit);
     this.drawFlexLayers(circuit);
@@ -38,26 +51,40 @@ export class CircuitRenderer {
     if (overlays?.wire) this.drawTempWire(overlays.wire);
     else if (overlays?.hoverPin) this.drawHoverPin(overlays.hoverPin, circuit);
     this.drawOverlay(circuit);
+
+    ctx.restore();
   }
 
-  private drawBackground(width: number, height: number): void {
+  private drawGrid(width: number, height: number, viewport: Viewport): void {
     const ctx = this.ctx;
-    ctx.fillStyle = '#1e1e2e';
-    ctx.fillRect(0, 0, width, height);
-
     ctx.strokeStyle = '#313244';
-    ctx.lineWidth = 0.5;
+    // 线宽按 scale 反缩放，保证视觉粗细恒定
+    ctx.lineWidth = 0.5 / viewport.scale;
+
     const gridSize = 20;
-    for (let x = 0; x <= width; x += gridSize) {
+
+    // 屏幕可视区域对应的逻辑坐标范围
+    const logicLeft = (0 - viewport.offsetX) / viewport.scale;
+    const logicTop = (0 - viewport.offsetY) / viewport.scale;
+    const logicRight = (width - viewport.offsetX) / viewport.scale;
+    const logicBottom = (height - viewport.offsetY) / viewport.scale;
+
+    // 对齐到网格边界
+    const startX = Math.floor(logicLeft / gridSize) * gridSize;
+    const startY = Math.floor(logicTop / gridSize) * gridSize;
+    const endX = Math.ceil(logicRight / gridSize) * gridSize;
+    const endY = Math.ceil(logicBottom / gridSize) * gridSize;
+
+    for (let x = startX; x <= endX; x += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, height);
+      ctx.moveTo(x, startY);
+      ctx.lineTo(x, endY);
       ctx.stroke();
     }
-    for (let y = 0; y <= height; y += gridSize) {
+    for (let y = startY; y <= endY; y += gridSize) {
       ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(width, y);
+      ctx.moveTo(startX, y);
+      ctx.lineTo(endX, y);
       ctx.stroke();
     }
   }

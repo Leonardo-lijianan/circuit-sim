@@ -9,8 +9,6 @@ export class KeyboardManager {
   private circuitManager: CircuitManager;
   private statusBar: StatusBarManager;
 
-  private keys: Set<string> = new Set();
-
   // d 键二次确认删除的待确认元件 id
   private pendingDeleteId: number | null = null;
   private pendingDeleteTimer: number | null = null;
@@ -49,14 +47,6 @@ export class KeyboardManager {
         this.interaction.setMode('select');
         break;
       // d 键在 keyup 中处理（避免长按重复触发）
-      case ' ':
-        event.preventDefault();
-        if (!this.keys.has('Space')) {
-          this.keys.add('Space');
-          // 预留 Pan 模式
-          // this.interaction.setMode('pan');
-        }
-        break;
     }
   }
 
@@ -68,13 +58,6 @@ export class KeyboardManager {
       case 'd':
       case 'D':
         this.handleDeleteKey();
-        break;
-      case ' ':
-        if (this.keys.has('Space')) {
-          this.keys.delete('Space');
-          // 预留：释放 Pan
-          // this.interaction.setMode('select');
-        }
         break;
     }
   }

@@ -4,6 +4,8 @@ import type { CircuitRenderer } from './CircuitRenderer';
 import type { CanvasManager } from './CanvasManager';
 import type { CircuitManager } from '../manager/CircuitManager';
 import type { InteractionManager } from '../interaction/InteractionManager';
+import type { Viewport } from '../utils/coordinates';
+import { defaultViewport } from '../utils/coordinates';
 
 /**
  * RenderCoordinator
@@ -22,6 +24,10 @@ export class RenderCoordinator {
   private circuitManager: CircuitManager;
   private interaction: InteractionManager;
   private lastMousePos: { x: number; y: number } | null = null;
+  private viewport: Viewport = defaultViewport();
+
+  private static SCALE_MIN = 0.25;
+  private static SCALE_MAX = 4.0;
 
   constructor(deps: {
     renderer: CircuitRenderer;
@@ -40,6 +46,48 @@ export class RenderCoordinator {
    */
   setMousePos(pos: { x: number; y: number } | null): void {
     this.lastMousePos = pos;
+  }
+
+  /**
+   * 获取当前视口（供 MouseManager 做坐标转换）
+   */
+  getViewport(): Viewport {
+    return this.viewport;
+  }
+
+  /**
+   * 平移视口（中键拖拽）
+   */
+  setPan(offsetX: number, offsetY: number): void {
+    this.viewport.offsetX = offsetX;
+    this.viewport.offsetY = offsetY;
+    this.render();
+  }
+
+  /**
+   * 以指定屏幕坐标为中心缩放（滚轮）
+   * @param screenX - Canvas 物理坐标 X（screenToCanvas 返回值）
+   * @param screenY - Canvas 物理坐标 Y
+   * @param factor - 缩放因子（>1 放大，<1 缩小）
+   */
+  zoomAt(screenX: number, screenY: number, factor: number): void {
+    const oldScale = this.viewport.scale;
+    const newScale = Math.max(
+      RenderCoordinator.SCALE_MIN,
+      Math.min(RenderCoordinator.SCALE_MAX, oldScale * factor)
+    );
+
+    if (newScale === oldScale) return;
+
+    // 保持屏幕点对应的逻辑坐标不变
+    const logicX = (screenX - this.viewport.offsetX) / oldScale;
+    const logicY = (screenY - this.viewport.offsetY) / oldScale;
+
+    this.viewport.scale = newScale;
+    this.viewport.offsetX = screenX - logicX * newScale;
+    this.viewport.offsetY = screenY - logicY * newScale;
+
+    this.render();
   }
 
   /**
@@ -82,6 +130,6 @@ export class RenderCoordinator {
       }
     }
 
-    this.renderer.render(circuit, width, height, overlays);
+    this.renderer.render(circuit, width, height, this.viewport, overlays);
   }
 }

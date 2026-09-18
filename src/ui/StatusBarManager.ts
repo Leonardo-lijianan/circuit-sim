@@ -7,6 +7,7 @@ export class StatusBarManager {
   private wireCountEl: HTMLElement | null;
   private simStatusEl: HTMLElement | null;
   private cursorPosEl: HTMLElement | null;
+  private zoomLevelEl: HTMLElement | null;
   private statusMsgEl: HTMLElement | null;
   private statusMsgTimer: number | null = null;
 
@@ -15,7 +16,18 @@ export class StatusBarManager {
     this.wireCountEl = document.getElementById('wireCount');
     this.simStatusEl = document.getElementById('simStatus');
     this.cursorPosEl = document.getElementById('cursorPos');
+    this.zoomLevelEl = document.getElementById('zoomLevel');
     this.statusMsgEl = document.getElementById('statusMsg');
+  }
+
+  /**
+   * 更新缩放比例显示
+   * @param scale - 缩放比例（1.0 = 100%）
+   */
+  updateZoom(scale: number): void {
+    if (this.zoomLevelEl) {
+      this.zoomLevelEl.textContent = `${Math.round(scale * 100)}%`;
+    }
   }
 
   /**

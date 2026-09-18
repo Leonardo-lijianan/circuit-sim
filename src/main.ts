@@ -17,7 +17,6 @@ import { StatusBarManager } from './ui/StatusBarManager';
 import { KeyboardManager } from './io/KeyboardManager';
 import { MouseManager } from './io/MouseManager';
 import { InteractionManager } from './interaction/InteractionManager';
-import { defaultViewport } from './utils/coordinates';
 import { hitTestCircle, hitTestRect, hitTestSnap, hitTest } from './utils/hitTest';
 import type { Circuit } from './types';
 
@@ -38,7 +37,6 @@ loader.debugPrint();
 const canvasManager = new CanvasManager('#canvas-container', 'circuitCanvas');
 const ctx = canvasManager.getContext();
 const canvas = canvasManager.getCanvas();
-const viewport = defaultViewport();
 
 console.log(`📐 Canvas 尺寸: ${canvasManager.getSize().width} × ${canvasManager.getSize().height}`);
 
@@ -82,7 +80,6 @@ new KeyboardManager({
 
 /* const mouseManager = */ new MouseManager({
   canvas,
-  viewport,
   interaction,
   statusBar,
   coordinator,
