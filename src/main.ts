@@ -96,9 +96,10 @@ interaction.setContext(
 // 6. 注册回调（数据 / 模式 / 窗口变化 → 触发重绘）
 // ============================================================
 
-// 6.1 数据更新 → 更新状态栏  重绘
+// 6.1 数据更新 → 更新状态栏 / 面板 / 重绘
 circuitManager.onUpdate((circuit: Circuit) => {
   statusBar.updateCircuitStats(circuit);
+  panel.update(circuit.selection, circuit.components);
   coordinator.render();
 });
 

@@ -1,7 +1,7 @@
 // src/ui/PanelManager.ts
 
 import type { ComponentLoader } from '../loader/ComponentLoader';
-import type { PendingAction, ComponentInstance } from '../types';
+import type { PendingAction, ComponentInstance, Selection } from '../types';
 import type { InteractionManager } from '../interaction/InteractionManager';  // ← Task 3.4 新增
 
 export type PanelMode = 'library' | 'params' | 'empty';
@@ -12,6 +12,8 @@ export class PanelManager {
   private panelTitle: HTMLElement;
   private loader: ComponentLoader;
   private interaction: InteractionManager | null = null;  // ← 新增
+  // 缓存上次的选择状态，避免 onUpdate 每帧都重建 DOM
+  private lastSelectionKey: string | null = null;
 
   constructor(loader: ComponentLoader) {
     this.loader = loader;
@@ -165,20 +167,36 @@ export class PanelManager {
   }
 
   /**
-   * 根据选中状态切换面板
-   * Phase 3 会用到
+   * 根据选择状态切换面板
+   * 
+   * - 无选择 → 元件库
+   * - 选中元件 → 参数面板
+   * - 选中电线 / 其他 → 元件库（暂不支持电线的参数面板）
+   * 
+   * 幂等：如果选择状态未变，跳过重建，避免 onUpdate 每帧疯狂重建 DOM
    */
-  update(selectedId: number | null, components: ComponentInstance[]): void {
-    if (selectedId === null) {
+  update(selection: Selection | null, components: ComponentInstance[]): void {
+    // 唯一 key 用于判断选择是否变化
+    const key = selection ? `${selection.kind}:${selection.id}` : null;
+    if (key === this.lastSelectionKey) return;
+    this.lastSelectionKey = key;
+
+    if (!selection) {
       this.showLibrary();
       return;
     }
 
-    const comp = components.find(c => c.id === selectedId);
-    if (comp) {
-      this.showParams(comp);
-    } else {
-      this.showLibrary();
+    if (selection.kind === 'component') {
+      const comp = components.find(c => c.id === selection.id);
+      if (comp) {
+        this.showParams(comp);
+      } else {
+        this.showLibrary();
+      }
+      return;
     }
+
+    // 电线 / 其他类型 → 元件库
+    this.showLibrary();
   }
 }
