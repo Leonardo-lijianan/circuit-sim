@@ -38,6 +38,9 @@ pub enum SolverError {
 
     #[error("电路中没有参考地（无 GND 元件，也无电压源）")]
     NoGround,
+
+    #[error("元件 {component_id} 缺少引脚 {pin_id}")]
+    MissingPin { component_id: u32, pin_id: String },
 }
 
 #[cfg(test)]
