@@ -3,6 +3,7 @@
 import type { ComponentLoader } from '../loader/ComponentLoader';
 import type { PendingAction, ComponentInstance, Selection } from '../types';
 import type { InteractionManager } from '../interaction/InteractionManager';  // ← Task 3.4 新增
+import { ParamForm } from './ParamForm';
 
 export type PanelMode = 'library' | 'params' | 'empty';
 
@@ -14,6 +15,10 @@ export class PanelManager {
   private interaction: InteractionManager | null = null;  // ← 新增
   // 缓存上次的选择状态，避免 onUpdate 每帧都重建 DOM
   private lastSelectionKey: string | null = null;
+  // 参数修改回调（由 main.ts 注入，避免直接依赖 CircuitManager）
+  private paramChangeHandler: ((compId: number, paramId: string, value: any) => void) | null = null;
+  // 当前显示的表单实例（Task 6.2 会用来同步外部更新）
+  private currentForm: ParamForm | null = null;
 
   constructor(loader: ComponentLoader) {
     this.loader = loader;
@@ -32,6 +37,16 @@ export class PanelManager {
 
     // 默认显示元件库
     this.showLibrary();
+  }
+
+  /**
+   * 注入参数修改回调（Task 6.1）
+   * 由 main.ts 提供，内部转给 CircuitManager.updateParam
+   */
+  setParamChangeHandler(
+    handler: (compId: number, paramId: string, value: any) => void
+  ): void {
+    this.paramChangeHandler = handler;
   }
 
   // ← 新增：设置 InteractionManager 引用 (Task 3.4)
@@ -128,33 +143,59 @@ export class PanelManager {
   }
 
   /**
-   * 显示参数面板（Phase 3/7 实现）
+   * 显示参数面板（Task 6.1）
    */
   showParams(comp: ComponentInstance): void {
     this.panelIcon.textContent = '🔧';
     this.panelTitle.textContent = '参数面板';
     this.panelContent.innerHTML = '';
+    this.currentForm = null;
 
-    // TODO: Phase 7 - 动态生成参数表单
-    // 目前显示占位信息
     const def = this.loader.getDefinition(comp.type);
-    this.panelContent.innerHTML = `
-      <div class="param-info">
-        <div style="margin-bottom: 8px; color: #cdd6f4;">
-          <strong>${def?.label || comp.type}</strong>
-        </div>
-        <div style="font-size: 13px; color: #6c7086; margin-bottom: 4px;">
-          元件 ID: <span class="highlight">${comp.id}</span>
-        </div>
-        <div style="font-size: 13px; color: #6c7086;">
-          状态: <span class="highlight">${comp.state}</span>
-        </div>
-        <hr class="param-divider" />
-        <div style="font-size: 13px; color: #6c7086; text-align: center; padding: 12px 0;">
-          ⚙️ 参数面板将在 Phase 7 实现
-        </div>
-      </div>
-    `;
+    if (!def) {
+      this.panelContent.innerHTML = `<div class="panel-hint">未找到元件定义</div>`;
+      return;
+    }
+
+    // 顶部：元件名称 + ID + 状态
+    const header = document.createElement('div');
+    header.className = 'param-header';
+
+    const labelLine = document.createElement('div');
+    labelLine.className = 'param-header-label';
+    labelLine.textContent = def.label;
+    header.appendChild(labelLine);
+
+    const infoLine = document.createElement('div');
+    infoLine.className = 'param-header-info';
+    infoLine.textContent = `ID: ${comp.id} · 状态: ${comp.state}`;
+    header.appendChild(infoLine);
+
+    this.panelContent.appendChild(header);
+
+    // 分隔线
+    const hr = document.createElement('hr');
+    hr.className = 'param-divider';
+    this.panelContent.appendChild(hr);
+
+    // 参数表单
+    const form = new ParamForm(def, comp, {
+      onParamChange: (paramId, value) => {
+        this.paramChangeHandler?.(comp.id, paramId, value);
+      },
+    });
+    this.currentForm = form;
+    this.panelContent.appendChild(form.getElement());
+  }
+
+  /**
+   * 外部更新参数后的同步（Task 6.2）
+   * 例如 switch 通过空格键切换后，checkbox 需要同步
+   */
+  refreshParams(comp: ComponentInstance): void {
+    if (this.currentForm) {
+      this.currentForm.updateValues(comp);
+    }
   }
 
   /**

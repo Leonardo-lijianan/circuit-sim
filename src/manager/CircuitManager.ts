@@ -178,11 +178,24 @@ export class CircuitManager {
     if (!comp) return false;
     if (typeof comp.params.closed !== 'boolean') return false;
 
-    const newClosed = !comp.params.closed;
-    comp.params.closed = newClosed;
-    comp.state = newClosed ? 'on' : 'off';
+    comp.params.closed = !comp.params.closed;
+    this.syncStateFromParams(comp);
     this.triggerUpdate();
     return true;
+  }
+
+  /**
+   * 根据 params 同步 state（参数 → 状态 的约定）
+   *
+   * 目前约定：
+   *   - 若元件有 boolean 参数 closed → state = closed ? 'on' : 'off'
+   *
+   * 后续如果有更多可交互元件，可扩展此方法。
+   */
+  private syncStateFromParams(comp: ComponentInstance): void {
+    if (typeof comp.params.closed === 'boolean') {
+      comp.state = comp.params.closed ? 'on' : 'off';
+    }
   }
 
   // ============================================================
@@ -244,6 +257,7 @@ export class CircuitManager {
     const comp = this.getComponent(compId);
     if (!comp) return;
     comp.params[paramId] = value;
+    this.syncStateFromParams(comp);
     this.triggerUpdate();
   }
 

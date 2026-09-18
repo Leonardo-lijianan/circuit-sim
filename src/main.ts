@@ -168,6 +168,13 @@ simClient.onError((msg) => {
 circuitManager.onUpdate((circuit: Circuit) => {
   statusBar.updateCircuitStats(circuit);
   panel.update(circuit.selection, circuit.components);
+
+  // 同步选中元件的参数面板显示（如 switch 通过空格切换后）
+  if (circuit.selection?.kind === 'component') {
+    const comp = circuit.components.find(c => c.id === circuit.selection!.id);
+    if (comp) panel.refreshParams(comp);
+  }
+
   coordinator.render();
 
   // 只在 Worker Running 时推送（Idle/Stopped 时推了也没用）
@@ -218,6 +225,9 @@ interaction.onWireComplete((start, end) => {
 });
 
 panel.setInteraction(interaction);
+panel.setParamChangeHandler((compId, paramId, value) => {
+  circuitManager.updateParam(compId, paramId, value);
+});
 
 // ============================================================
 // 8. 工具栏按钮接线
