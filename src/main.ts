@@ -18,6 +18,8 @@ import { KeyboardManager } from './io/KeyboardManager';
 import { MouseManager } from './io/MouseManager';
 import { InteractionManager } from './interaction/InteractionManager';
 import { hitTestCircle, hitTestRect, hitTestSnap, hitTest } from './utils/hitTest';
+import { Channel, invoke } from '@tauri-apps/api/core';
+import { SimulationClient } from './sim/SimulationClient';
 import type { Circuit } from './types';
 
 console.log('🚀 Phase 0: 电路仿真系统启动');
@@ -128,7 +130,6 @@ interaction.onPlace((type: string, x: number, y: number) => {
   }
 });
 
-
 // Select 模式：选中元件
 interaction.onSelectComponent((id) => {
   circuitManager.selectComponent(id);
@@ -220,10 +221,7 @@ console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');
 // Phase 5 调试：测试 invoke solve_circuit
 // ============================================================
 
-import { Channel, invoke } from '@tauri-apps/api/core';
-
 (window as any).__solveCircuit = async () => {
-  // 构造一个最小电路：1.5V 电池 + 1000Ω 电阻
   const input = {
     analysis: { type: 'dc' },
     components: [
@@ -252,16 +250,13 @@ console.log('🔬 在控制台执行 __solveCircuit() 测试 Tauri command');
 // ============================================================
 
 (window as any).__testWorker = async () => {
-  // 1. 创建 Channel，监听 Worker 推送的消息
   const channel = new Channel<unknown>();
   channel.onmessage = (msg) => {
     console.log('📨 收到 Worker 消息:', msg);
   };
 
-  // 2. 初始化 Worker（把 Channel 传进去）
   await invoke('init_worker', { channel });
 
-  // 3. 发送 UpdateInput，给 Worker 一个电路
   const input = {
     analysis: { type: 'dc' },
     components: [
@@ -275,17 +270,14 @@ console.log('🔬 在控制台执行 __solveCircuit() 测试 Tauri command');
   };
   await invoke('send_command', { cmd: 'UpdateInput', payload: input });
 
-  // 4. 发送 Start
   await invoke('send_command', { cmd: 'Start' });
   console.log('▶️ 已发送 Start');
 
-  // 5. 等 500ms 后 Pause
   setTimeout(() => {
     invoke('send_command', { cmd: 'Pause' });
     console.log('⏸️ 已发送 Pause');
   }, 500);
 
-  // 6. 再等 500ms 后 Stop
   setTimeout(() => {
     invoke('send_command', { cmd: 'Stop' });
     console.log('⏹️ 已发送 Stop');
@@ -293,3 +285,22 @@ console.log('🔬 在控制台执行 __solveCircuit() 测试 Tauri command');
 };
 
 console.log('🔬 在控制台执行 __testWorker() 测试常驻 Worker');
+
+// ============================================================
+// Phase 5：SimulationClient 实例（Task 5.5）
+// ============================================================
+
+const simClient = new SimulationClient();
+
+(window as any).__simClient = simClient;
+
+// ★ 启动时自动初始化 + 停止（应对 F5 刷新导致的旧 Channel 失效）
+(async () => {
+  try {
+    await simClient.init();
+    await simClient.stop();
+    console.log('🔬 SimulationClient 已就绪（Worker 已复位）');
+  } catch (err) {
+    console.error('❌ SimulationClient 初始化失败:', err);
+  }
+})();

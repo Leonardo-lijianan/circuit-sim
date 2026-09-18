@@ -165,9 +165,18 @@ fn send_message(
     result_tx: &Arc<Mutex<Option<Channel<WorkerMessage>>>>,
     message: WorkerMessage,
 ) {
+    let mut should_clear = false;
     if let Ok(lock) = result_tx.lock() {
         if let Some(channel) = lock.as_ref() {
-            let _ = channel.send(message);
+            if channel.send(message).is_err() {
+                // Channel 已失效（前端刷新），标记清空
+                should_clear = true;
+            }
+        }
+    }
+    if should_clear {
+        if let Ok(mut lock) = result_tx.lock() {
+            *lock = None;
         }
     }
 }
