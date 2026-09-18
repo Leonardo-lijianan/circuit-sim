@@ -129,7 +129,7 @@ fn get_node_voltage(
             pin_id: pin_id.to_string(),
         })?;
 
-    if node_idx == ctx.ground_index {
+    if ctx.is_ground(node_idx) {
         return Ok(0.0);
     }
 

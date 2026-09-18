@@ -164,6 +164,27 @@ export class CircuitManager {
     this.triggerUpdate();
   }
 
+  /**
+   * 切换可交互元件的状态（目前仅支持 switch）
+   * 
+   * 约定：
+   *   - 参数 `closed: boolean`
+   *   - state 为 'on' / 'off'
+   * 
+   * 返回是否成功切换
+   */
+  toggleComponent(id: number): boolean {
+    const comp = this.getComponent(id);
+    if (!comp) return false;
+    if (typeof comp.params.closed !== 'boolean') return false;
+
+    const newClosed = !comp.params.closed;
+    comp.params.closed = newClosed;
+    comp.state = newClosed ? 'on' : 'off';
+    this.triggerUpdate();
+    return true;
+  }
+
   // ============================================================
   // 连线操作
   // ============================================================

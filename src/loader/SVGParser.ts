@@ -5,7 +5,7 @@
 // ============================================================
 
 export interface SVGCommand {
-  type: 'circle' | 'rect' | 'path' | 'polygon';
+  type: 'circle' | 'rect' | 'path' | 'polygon' | 'line';
   // 公共属性
   fill: string | null;
   stroke: string | null;
@@ -24,6 +24,11 @@ export interface SVGCommand {
   d?: string;
   // polygon
   points?: number[];
+  // line
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
 }
 
 export interface SVGParsedResult {
@@ -118,6 +123,24 @@ export function parseSVG(svgText: string): SVGParsedResult {
         commands.push({
           type: 'polygon',
           points,
+          fill,
+          stroke,
+          strokeWidth,
+          opacity,
+        });
+        break;
+      }
+      case 'line': {
+        const x1 = parseFloat(child.getAttribute('x1') || '0');
+        const y1 = parseFloat(child.getAttribute('y1') || '0');
+        const x2 = parseFloat(child.getAttribute('x2') || '0');
+        const y2 = parseFloat(child.getAttribute('y2') || '0');
+        commands.push({
+          type: 'line',
+          x1,
+          y1,
+          x2,
+          y2,
           fill,
           stroke,
           strokeWidth,

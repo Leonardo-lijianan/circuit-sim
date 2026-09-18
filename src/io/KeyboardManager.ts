@@ -46,8 +46,23 @@ export class KeyboardManager {
         }
         this.interaction.setMode('select');
         break;
+      case ' ':
+        // 空格键：切换选中元件（如果支持）
+        event.preventDefault();
+        this.handleSpaceToggle();
+        break;
       // d 键在 keyup 中处理（避免长按重复触发）
     }
+  }
+
+  /**
+   * 空格键：切换当前选中元件的状态
+   * 仅对支持 toggle 的元件有效（如 switch）
+   */
+  private handleSpaceToggle(): void {
+    const sel = this.circuitManager.getSelection();
+    if (!sel || sel.kind !== 'component') return;
+    this.circuitManager.toggleComponent(sel.id);
   }
 
   private handleKeyUp(event: KeyboardEvent): void {

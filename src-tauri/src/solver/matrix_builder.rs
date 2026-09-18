@@ -31,11 +31,11 @@ pub fn build_mna(
     ctx: &CircuitContext,
     v_guess: &HashMap<usize, f64>,
 ) -> Result<MnaSystem, SolverError> {
-    // 1. 节点重映射（跳过地节点）
+    // 1. 节点重映射（跳过所有地节点）
     let mut node_matrix_index: HashMap<usize, usize> = HashMap::new();
     let mut next_idx = 0;
     for i in 0..ctx.node_count {
-        if i == ctx.ground_index {
+        if ctx.is_ground(i) {
             continue;
         }
         node_matrix_index.insert(i, next_idx);
@@ -306,7 +306,7 @@ fn get_guess(
     ctx: &CircuitContext,
     v_guess: &HashMap<usize, f64>,
 ) -> f64 {
-    if node_idx == ctx.ground_index {
+    if ctx.is_ground(node_idx) {
         0.0
     } else {
         v_guess.get(&node_idx).copied().unwrap_or(0.0)

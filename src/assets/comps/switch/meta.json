@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "name": "switch",
+  "label": "开关",
+  "fix": { "file": "fix.svg" },
+  "flex": {
+    "units": {
+      "lever": { "file": "flex/lever.svg" }
+    }
+  },
+  "pins": [
+    { "id": "p1", "x": 0,  "y": 20, "label": "1" },
+    { "id": "p2", "x": 60, "y": 20, "label": "2" }
+  ],
+  "params": [
+    { "id": "closed", "label": "闭合", "type": "boolean", "default": false }
+  ],
+  "visual": {
+    "states": {
+      "off": {
+        "parts": {
+          "lever": { "rotation": -30, "rotationAnchor": [15, 20] }
+        }
+      },
+      "on": {
+        "parts": {
+          "lever": { "rotation": 0, "rotationAnchor": [15, 20] }
+        }
+      }
+    },
+    "default_state": "off"
+  },
+  "model": {
+    "func": "switch",
+    "paramMap": { "closed": "closed" }
+  }
+}

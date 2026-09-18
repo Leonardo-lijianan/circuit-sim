@@ -1,0 +1,10 @@
+<svg viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg">
+  <!-- 左引脚线 -->
+  <line x1="0"  y1="20" x2="13" y2="20" stroke="#666" stroke-width="1.5"/>
+  <!-- 右引脚线 -->
+  <line x1="47" y1="20" x2="60" y2="20" stroke="#666" stroke-width="1.5"/>
+  <!-- 左触点 -->
+  <circle cx="15" cy="20" r="2.5" fill="#333"/>
+  <!-- 右触点 -->
+  <circle cx="45" cy="20" r="2.5" fill="#333"/>
+</svg>

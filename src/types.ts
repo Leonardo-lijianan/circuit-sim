@@ -52,6 +52,11 @@ export interface VisualState {
     opacity?: number;
     color?: string;
     rotation?: number;
+    /**
+     * 旋转轴在 fix.svg 坐标系中的位置 [x, y]
+     * 未指定时默认使用 viewBox 中心
+     */
+    rotationAnchor?: [number, number];
     offsetX?: number;
     offsetY?: number;
   }>;

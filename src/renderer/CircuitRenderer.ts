@@ -150,7 +150,14 @@ export class CircuitRenderer {
     ctx: CanvasRenderingContext2D,
     comp: ComponentInstance,
     flexUnit: FlexUnitCache,
-    partParams: { opacity?: number; color?: string; rotation?: number; offsetX?: number; offsetY?: number }
+    partParams: {
+      opacity?: number;
+      color?: string;
+      rotation?: number;
+      rotationAnchor?: [number, number];
+      offsetX?: number;
+      offsetY?: number;
+    }
   ): void {
     const { commands, viewBox } = flexUnit;
     const { vw, vh } = viewBox;
@@ -161,8 +168,12 @@ export class CircuitRenderer {
     const rotation = partParams.rotation || 0;
     if (rotation !== 0) {
       ctx.save();
-      const cx = comp.x + comp.w / 2;
-      const cy = comp.y + comp.h / 2;
+
+      // 旋转轴：默认 viewBox 中心，可通过 rotationAnchor 指定
+      const anchorVb = partParams.rotationAnchor || [vw / 2, vh / 2];
+      const cx = comp.x + anchorVb[0] * scaleX;
+      const cy = comp.y + anchorVb[1] * scaleY;
+
       ctx.translate(cx, cy);
       ctx.rotate(rotation * Math.PI / 180);
       ctx.translate(-cx, -cy);
@@ -441,6 +452,21 @@ export class CircuitRenderer {
             ctx.fillStyle = color;
             ctx.fill();
           }
+          if (cmd.stroke && cmd.stroke !== 'none') {
+            ctx.strokeStyle = cmd.stroke;
+            ctx.lineWidth = (cmd.strokeWidth || 1) * Math.min(scaleX, scaleY);
+            ctx.stroke();
+          }
+          break;
+        }
+        case 'line': {
+          const x1 = comp.x + (cmd.x1 ?? 0) * scaleX + offsetX;
+          const y1 = comp.y + (cmd.y1 ?? 0) * scaleY + offsetY;
+          const x2 = comp.x + (cmd.x2 ?? 0) * scaleX + offsetX;
+          const y2 = comp.y + (cmd.y2 ?? 0) * scaleY + offsetY;
+          ctx.beginPath();
+          ctx.moveTo(x1, y1);
+          ctx.lineTo(x2, y2);
           if (cmd.stroke && cmd.stroke !== 'none') {
             ctx.strokeStyle = cmd.stroke;
             ctx.lineWidth = (cmd.strokeWidth || 1) * Math.min(scaleX, scaleY);
