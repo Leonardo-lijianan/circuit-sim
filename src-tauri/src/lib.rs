@@ -1,4 +1,7 @@
+// src-tauri/src/lib.rs
+
 pub mod solver;
+pub mod commands;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -10,7 +13,11 @@ fn greet(name: &str) -> String {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet])
+        .plugin(tauri_plugin_fs::init())
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            commands::solve_circuit,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

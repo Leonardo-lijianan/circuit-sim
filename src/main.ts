@@ -213,5 +213,36 @@ let ledOn = false;
 (window as any).__hitTestSnap = hitTestSnap;
 (window as any).__hitTest = hitTest;
 
-console.log('✅ 系统就绪：当前进度： Phase 3 Task 3.4（放置元件）');
+console.log('✅ 系统就绪：当前进度： Phase 5 Task 5.1（Tauri command）');
 console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');
+
+// ============================================================
+// Phase 5 调试：测试 invoke solve_circuit
+// ============================================================
+
+import { invoke } from '@tauri-apps/api/core';
+
+(window as any).__solveCircuit = async () => {
+  // 构造一个最小电路：1.5V 电池 + 1000Ω 电阻
+  const input = {
+    analysis: { type: 'dc' },
+    components: [
+      { id: 1, func: 'voltage_source', params: { V: 1.5 }, pins: [{ id: 'neg' }, { id: 'pos' }] },
+      { id: 2, func: 'ohm', params: { R: 1000 }, pins: [{ id: 'p1' }, { id: 'p2' }] },
+    ],
+    wires: [
+      { start: { componentId: 1, pinId: 'pos' }, end: { componentId: 2, pinId: 'p1' } },
+      { start: { componentId: 1, pinId: 'neg' }, end: { componentId: 2, pinId: 'p2' } },
+    ],
+  };
+  try {
+    const result = await invoke('solve_circuit', { input });
+    console.log('🔬 solve_circuit 结果:', result);
+    return result;
+  } catch (err) {
+    console.error('❌ solve_circuit 失败:', err);
+    throw err;
+  }
+};
+
+console.log('🔬 在控制台执行 __solveCircuit() 测试 Tauri command');
