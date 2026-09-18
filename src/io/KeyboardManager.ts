@@ -9,8 +9,8 @@ export class KeyboardManager {
   private circuitManager: CircuitManager;
   private statusBar: StatusBarManager;
 
-  // d 键二次确认删除的待确认元件 id
-  private pendingDeleteId: number | null = null;
+  // d 键二次确认删除的待确认键（格式 "kind:id"）
+  private pendingDeleteKey: string | null = null;
   private pendingDeleteTimer: number | null = null;
   private static DELETE_CONFIRM_TIMEOUT = 3000;
 
@@ -68,27 +68,30 @@ export class KeyboardManager {
    * 第二次按 d（3 秒内，同一元件）：真正删除
    */
   private handleDeleteKey(): void {
-    const selectedId = this.circuitManager.getSelectedId();
+    const selection = this.circuitManager.getSelection();
 
-    // 情况1：没有选中的元件
-    if (selectedId === null) {
+    // 情况1：没有选中的对象
+    if (!selection) {
       this.clearDeletePending();
-      this.statusBar.showWarning('没有选中的元件');
+      this.statusBar.showWarning('没有选中的对象');
       return;
     }
 
-    // 情况2：第一次按 d，或者选中的元件变了
-    if (this.pendingDeleteId !== selectedId) {
-      this.pendingDeleteId = selectedId;
+    // 唯一标识（kind + id）
+    const selKey = `${selection.kind}:${selection.id}`;
+
+    // 情况2：第一次按 d，或者选中的对象变了
+    if (this.pendingDeleteKey !== selKey) {
+      this.pendingDeleteKey = selKey;
       this.startDeleteTimer();
       this.statusBar.showWarning('再按一次 d 删除');
       return;
     }
 
-    // 情况3：第二次按 d，且是同一元件 → 执行删除
+    // 情况3：第二次按 d，且是同一对象 → 执行删除
     this.clearDeletePending();
     this.statusBar.clearWarning();
-    this.circuitManager.removeComponent(selectedId);
+    this.circuitManager.deleteSelection();
   }
 
   private startDeleteTimer(): void {
@@ -96,14 +99,14 @@ export class KeyboardManager {
       clearTimeout(this.pendingDeleteTimer);
     }
     this.pendingDeleteTimer = window.setTimeout(() => {
-      this.pendingDeleteId = null;
+      this.pendingDeleteKey = null;
       this.pendingDeleteTimer = null;
       this.statusBar.clearWarning();
     }, KeyboardManager.DELETE_CONFIRM_TIMEOUT);
   }
 
   private clearDeletePending(): void {
-    this.pendingDeleteId = null;
+    this.pendingDeleteKey = null;
     if (this.pendingDeleteTimer !== null) {
       clearTimeout(this.pendingDeleteTimer);
       this.pendingDeleteTimer = null;

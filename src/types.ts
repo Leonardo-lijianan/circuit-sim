@@ -143,8 +143,13 @@ export interface Wire {
 export interface Circuit {
   components: ComponentInstance[];
   wires: Wire[];
-  selectedId: number | null;
+  selection: Selection | null;
 }
+
+// ===== 选择模型（支持元件 / 电线，未来可扩展） =====
+export type Selection =
+  | { kind: 'component'; id: number }
+  | { kind: 'wire'; id: number };
 
 // ============================================================
 // IPC 合约（给 Rust 的极简负载）

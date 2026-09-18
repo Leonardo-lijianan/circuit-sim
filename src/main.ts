@@ -86,7 +86,11 @@ new KeyboardManager({
 });
 
 // 注入 hitTest 上下文
-interaction.setContext(loader, () => circuitManager.getComponents());
+interaction.setContext(
+  loader,
+  () => circuitManager.getComponents(),
+  () => circuitManager.getWires()
+);
 
 // ============================================================
 // 6. 注册回调（数据 / 模式 / 窗口变化 → 触发重绘）
@@ -125,8 +129,13 @@ interaction.onPlace((type: string, x: number, y: number) => {
 
 
 // Select 模式：选中元件
-interaction.onSelect((id) => {
+interaction.onSelectComponent((id) => {
   circuitManager.selectComponent(id);
+});
+
+// Select 模式：选中电线
+interaction.onSelectWire((id) => {
+  circuitManager.selectWire(id);
 });
 
 // Select 模式：拖拽移动

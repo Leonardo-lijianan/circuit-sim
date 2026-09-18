@@ -1,12 +1,12 @@
 // src/manager/CircuitManager.ts
 
-import type { ComponentInstance, Wire, Circuit, PinRef } from '../types';
+import type { ComponentInstance, Wire, Circuit, PinRef, Selection } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
 
 export class CircuitManager {
   private components: ComponentInstance[] = [];
   private wires: Wire[] = [];
-  private selectedId: number | null = null;
+  private selection: Selection | null = null;
   private nextId: number = 1;
   private nextWireId: number = 1;
   private loader: ComponentLoader;
@@ -44,7 +44,7 @@ export class CircuitManager {
     return {
       components: this.components,
       wires: this.wires,
-      selectedId: this.selectedId,
+      selection: this.selection,
     };
   }
 
@@ -56,13 +56,49 @@ export class CircuitManager {
     return this.wires.find(w => w.id === id);
   }
 
-  getSelected(): ComponentInstance | null {
-    if (this.selectedId === null) return null;
-    return this.getComponent(this.selectedId) || null;
+  // ---- 选择：统一 API ----
+  select(sel: Selection | null): void {
+    this.selection = sel;
+    this.triggerUpdate();
   }
 
-  getSelectedId(): number | null {
-    return this.selectedId;
+  getSelection(): Selection | null {
+    return this.selection;
+  }
+
+  isSelected(kind: Selection['kind'], id: number): boolean {
+    return this.selection?.kind === kind && this.selection.id === id;
+  }
+
+  /**
+   * 删除当前选择（内部分发到 removeComponent / removeWire）
+   */
+  deleteSelection(): void {
+    const sel = this.selection;
+    if (!sel) return;
+
+    if (sel.kind === 'component') {
+      this.removeComponent(sel.id);
+    } else if (sel.kind === 'wire') {
+      this.removeWire(sel.id);
+    }
+  }
+
+  // ---- 选择：语法糖 ----
+  selectComponent(id: number | null): void {
+    this.select(id === null ? null : { kind: 'component', id });
+  }
+
+  selectWire(id: number | null): void {
+    this.select(id === null ? null : { kind: 'wire', id });
+  }
+
+  /**
+   * 获取选中元件的实例（如果选中的是元件）
+   */
+  getSelected(): ComponentInstance | null {
+    if (this.selection?.kind !== 'component') return null;
+    return this.getComponent(this.selection.id) || null;
   }
 
   getWiresForComponent(compId: number): Wire[] {
@@ -112,15 +148,11 @@ export class CircuitManager {
 
     this.components = this.components.filter(c => c.id !== id);
 
-    if (this.selectedId === id) {
-      this.selectedId = null;
+    // 如果选中的是被删除的元件，清除选择
+    if (this.selection?.kind === 'component' && this.selection.id === id) {
+      this.selection = null;
     }
 
-    this.triggerUpdate();
-  }
-
-  selectComponent(id: number | null): void {
-    this.selectedId = id;
     this.triggerUpdate();
   }
 
@@ -174,6 +206,12 @@ export class CircuitManager {
 
   removeWire(id: number): void {
     this.wires = this.wires.filter(w => w.id !== id);
+
+    // 如果选中的是被删除的电线，清除选择
+    if (this.selection?.kind === 'wire' && this.selection.id === id) {
+      this.selection = null;
+    }
+
     this.triggerUpdate();
   }
 

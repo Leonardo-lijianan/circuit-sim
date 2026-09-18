@@ -2,7 +2,7 @@
 
 import type { Mode, PendingAction, ComponentInstance, PinRef } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
-import { hitTest, hitTestSnap, hitTestPin } from '../utils/hitTest';
+import { hitTest, hitTestSnap, hitTestPin, hitTestWires } from '../utils/hitTest';
 
 export class InteractionManager {
   private mode: Mode = 'select';
@@ -24,9 +24,11 @@ export class InteractionManager {
   // 依赖注入（用于 hitTest）
   private loader: ComponentLoader | null = null;
   private getComponents: (() => ComponentInstance[]) | null = null;
+  private getWires: (() => import('../types').Wire[]) | null = null;
 
   // Select 模式回调
-  private onSelectCallback?: (id: number | null) => void;
+  private onSelectComponentCallback?: (id: number | null) => void;
+  private onSelectWireCallback?: (id: number | null) => void;
   private onMoveCallback?: (id: number, x: number, y: number) => void;
 
   // Wire 模式状态
@@ -239,23 +241,32 @@ export class InteractionManager {
       return;
     }
 
-    // 情况2：检测点击目标
-    const result = hitTest(x, y, components, this.loader);
+    // 情况2：命中优先级 = 引脚 > 电线 > 元件
 
-    // 点击引脚 → 开始连线
-    if (result.kind === 'pin') {
-      this.setPending({ kind: 'wire', start: result.ref });
+    // 2.1 引脚检测（点击引脚 → 开始连线）
+    const pinRef = hitTestPin(x, y, components, this.loader);
+    if (pinRef) {
+      this.setPending({ kind: 'wire', start: pinRef });
       this.wireMousePos = { x, y };
       this.updateCursor();
       return;
     }
 
-    // 点击元件 → 选中/拖拽
+    // 2.2 电线检测（点击电线 → 选中电线）
+    const wires = this.getWires ? this.getWires() : [];
+    const wireId = hitTestWires(x, y, wires, components, this.loader);
+    if (wireId !== null) {
+      this.onSelectWireCallback?.(wireId);
+      return;
+    }
+
+    // 2.3 元件检测（点击元件 → 选中/拖拽）
+    const result = hitTest(x, y, components, this.loader);
     if (result.kind === 'component') {
       const comp = components.find(c => c.id === result.id);
       if (!comp) return;
 
-      this.onSelectCallback?.(comp.id);
+      this.onSelectComponentCallback?.(comp.id);
 
       this.dragState = {
         compId: comp.id,
@@ -268,8 +279,8 @@ export class InteractionManager {
       return;
     }
 
-    // 点击空白 → 取消选中
-    this.onSelectCallback?.(null);
+    // 2.4 点击空白 → 取消选中
+    this.onSelectComponentCallback?.(null);
   }
 
   private handleSelectMouseMove(x: number, y: number): void {
@@ -412,13 +423,22 @@ export class InteractionManager {
   /**
    * 注入 hitTest 所需的上下文
    */
-  setContext(loader: ComponentLoader, getComponents: () => ComponentInstance[]): void {
+  setContext(
+    loader: ComponentLoader,
+    getComponents: () => ComponentInstance[],
+    getWires: () => import('../types').Wire[]
+  ): void {
     this.loader = loader;
     this.getComponents = getComponents;
+    this.getWires = getWires;
   }
 
-  onSelect(callback: (id: number | null) => void): void {
-    this.onSelectCallback = callback;
+  onSelectComponent(callback: (id: number | null) => void): void {
+    this.onSelectComponentCallback = callback;
+  }
+
+  onSelectWire(callback: (id: number | null) => void): void {
+    this.onSelectWireCallback = callback;
   }
 
   onMove(callback: (id: number, x: number, y: number) => void): void {

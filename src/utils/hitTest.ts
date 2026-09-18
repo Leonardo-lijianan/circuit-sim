@@ -1,7 +1,26 @@
 // src/utils/hitTest.ts
 
-import type { ComponentInstance, PinRef } from '../types';
+import type { ComponentInstance, PinRef, Wire } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
+
+/**
+ * 点到线段的距离
+ */
+function pointToSegmentDistance(
+  px: number, py: number,
+  x1: number, y1: number,
+  x2: number, y2: number
+): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  return Math.hypot(px - projX, py - projY);
+}
 
 /**
  * 圆形碰撞检测
@@ -128,6 +147,56 @@ export function hitTestPin(
     }
   }
   return null;
+}
+
+/**
+ * 电线碰撞检测（点到线段的距离）
+ * 
+ * @param x - 检测点 X 坐标
+ * @param y - 检测点 Y 坐标
+ * @param wires - 所有电线
+ * @param components - 所有元件实例（用于查引脚世界坐标）
+ * @param loader - ComponentLoader 实例
+ * @param threshold - 命中阈值（逻辑像素）
+ * @returns 命中的电线 id，或 null
+ */
+export function hitTestWires(
+  x: number,
+  y: number,
+  wires: Wire[],
+  components: ComponentInstance[],
+  loader: ComponentLoader,
+  threshold: number = 6
+): number | null {
+  // 逆序遍历，上层优先
+  for (let i = wires.length - 1; i >= 0; i--) {
+    const wire = wires[i];
+    const start = getPinWorldPos(wire.startComponentId, wire.startPinId, components, loader);
+    const end = getPinWorldPos(wire.endComponentId, wire.endPinId, components, loader);
+    if (!start || !end) continue;
+
+    const dist = pointToSegmentDistance(x, y, start.x, start.y, end.x, end.y);
+    if (dist <= threshold) return wire.id;
+  }
+  return null;
+}
+
+/**
+ * 获取引脚的世界坐标（内部工具）
+ */
+function getPinWorldPos(
+  compId: number,
+  pinId: string,
+  components: ComponentInstance[],
+  loader: ComponentLoader
+): { x: number; y: number } | null {
+  const comp = components.find(c => c.id === compId);
+  if (!comp) return null;
+  const def = loader.getDefinition(comp.type);
+  if (!def) return null;
+  const pin = def.pins.find(p => p.id === pinId);
+  if (!pin) return null;
+  return { x: comp.x + pin.x, y: comp.y + pin.y };
 }
 
 /**

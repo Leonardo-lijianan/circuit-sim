@@ -271,15 +271,52 @@ export class CircuitRenderer {
   }
 
   /**
-   * 层 5：覆盖层（选中高亮 + 未来引脚热区）
+   * 层 5：覆盖层（选中高亮）
    */
   private drawOverlay(circuit: Circuit): void {
-    if (circuit.selectedId === null) return;
+    const sel = circuit.selection;
+    if (!sel) return;
 
-    const comp = circuit.components.find(c => c.id === circuit.selectedId);
-    if (!comp) return;
+    if (sel.kind === 'component') {
+      const comp = circuit.components.find(c => c.id === sel.id);
+      if (comp) this.drawSelection(comp);
+    } else if (sel.kind === 'wire') {
+      const wire = circuit.wires.find(w => w.id === sel.id);
+      if (wire) this.drawWireSelection(wire, circuit.components);
+    }
+  }
 
-    this.drawSelection(comp);
+  /**
+   * 绘制电线选中高亮：线条整体变蓝，粗细不变
+   * 与元件选中的蓝色虚线框语义一致（蓝色 = 选中）
+   */
+  private drawWireSelection(wire: import('../types').Wire, components: ComponentInstance[]): void {
+    const start = this.getPinWorldPos(wire.startComponentId, wire.startPinId, components);
+    const end = this.getPinWorldPos(wire.endComponentId, wire.endPinId, components);
+    if (!start || !end) return;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    // 线条变蓝（粗细、端点大小与原线完全一致）
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(start.x, start.y);
+    ctx.lineTo(end.x, end.y);
+    ctx.stroke();
+
+    // 端点圆点也变蓝
+    ctx.fillStyle = '#89b4fa';
+    ctx.beginPath();
+    ctx.arc(start.x, start.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(end.x, end.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 
   /**
