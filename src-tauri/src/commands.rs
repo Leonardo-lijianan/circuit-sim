@@ -11,6 +11,18 @@ pub fn solve_circuit(input: SolverInput) -> Result<Vec<SolverOutput>, String> {
     solve(&input).map_err(|e| e.to_string())
 }
 
+/// 保存电路到文件（内容为 JSON 字符串）
+#[tauri::command]
+pub fn save_circuit_file(path: String, content: String) -> Result<(), String> {
+    std::fs::write(&path, content).map_err(|e| format!("保存失败: {}", e))
+}
+
+/// 从文件读取电路 JSON 内容
+#[tauri::command]
+pub fn load_circuit_file(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("读取失败: {}", e))
+}
+
 /// 初始化 Worker：前端传入结果接收 Channel
 #[tauri::command]
 pub fn init_worker(

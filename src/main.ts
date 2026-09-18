@@ -20,6 +20,9 @@ import { InteractionManager } from './interaction/InteractionManager';
 import { hitTestCircle, hitTestRect, hitTestSnap, hitTest } from './utils/hitTest';
 import { SimulationClient } from './sim/SimulationClient';
 import { evaluateTransition } from './sim/stateTransition';
+import { serialize, deserialize } from './sim/CircuitSerializer';
+import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialog';
+import { invoke } from '@tauri-apps/api/core';
 import type { Circuit, SolverInput } from './types';
 
 console.log('🚀 电路仿真系统启动');
@@ -248,6 +251,67 @@ interaction.onWireComplete((start, end) => {
 panel.setInteraction(interaction);
 panel.setParamChangeHandler((compId, paramId, value) => {
   circuitManager.updateParam(compId, paramId, value);
+});
+
+// ============================================================
+// 7.5. 打开/保存（Task 7.3）
+// ============================================================
+
+document.getElementById('btnSave')?.addEventListener('click', async () => {
+  try {
+    const path = await saveDialog({
+      title: '保存电路',
+      defaultPath: 'circuit.circuit.json',
+      filters: [{ name: '电路文件', extensions: ['json'] }],
+    });
+    if (!path) return;  // 用户取消
+
+    const content = serialize(circuitManager.getCircuit());
+    await invoke('save_circuit_file', { path, content });
+    statusBar.showWarning(`已保存：${path.split(/[/\\]/).pop()}`);
+  } catch (err) {
+    console.error('❌ 保存失败:', err);
+    statusBar.showWarning(`保存失败: ${(err as Error).message ?? err}`);
+  }
+});
+
+document.getElementById('btnOpen')?.addEventListener('click', async () => {
+  try {
+    const path = await openDialog({
+      title: '打开电路',
+      multiple: false,
+      filters: [{ name: '电路文件', extensions: ['json'] }],
+    });
+    if (!path || typeof path !== 'string') return;  // 用户取消
+
+    const content: string = await invoke('load_circuit_file', { path });
+    const { circuit, warnings } = deserialize(content, loader);
+
+    // 加载前先停止仿真（避免污染旧状态）
+    await simClient.stop();
+
+    circuitManager.loadCircuit(circuit);
+
+    console.log(`📂 已加载: ${path}（${circuit.components.length} 个元件, ${circuit.wires.length} 条连线）`);
+    for (const w of warnings) {
+      console.warn('⚠️', w);
+      statusBar.showWarning(w);
+    }
+    if (warnings.length === 0) {
+      statusBar.showWarning(`已加载：${path.split(/[/\\]/).pop()}`);
+    }
+  } catch (err) {
+    console.error('❌ 加载失败:', err);
+    statusBar.showWarning(`加载失败: ${(err as Error).message ?? err}`);
+  }
+});
+
+// 清空按钮
+
+document.getElementById('btnClear')?.addEventListener('click', async () => {
+  await simClient.stop();
+  circuitManager.clearCircuit();
+  statusBar.showWarning('已清空');
 });
 
 // ============================================================

@@ -166,6 +166,37 @@ export class CircuitManager {
   }
 
   /**
+   * 用外部电路替换当前电路（用于导入）
+   *
+   * - 重置 selection
+   * - 重算 nextId / nextWireId（避免与现有 id 冲突）
+   */
+  loadCircuit(circuit: Circuit): void {
+    this.components = circuit.components;
+    this.wires = circuit.wires;
+    this.selection = null;
+
+    const maxCompId = circuit.components.reduce((m, c) => Math.max(m, c.id), 0);
+    const maxWireId = circuit.wires.reduce((m, w) => Math.max(m, w.id), 0);
+    this.nextId = maxCompId + 1;
+    this.nextWireId = maxWireId + 1;
+
+    this.triggerUpdate();
+  }
+
+  /**
+   * 清空所有元件和连线
+   */
+  clearCircuit(): void {
+    this.components = [];
+    this.wires = [];
+    this.selection = null;
+    this.nextId = 1;
+    this.nextWireId = 1;
+    this.triggerUpdate();
+  }
+
+  /**
    * 旋转选中元件 90°
    *
    * 返回新的旋转角度；如果不是元件或旋转失败则返回 null

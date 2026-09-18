@@ -17,6 +17,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 启动常驻 Worker
             let handle = worker::spawn_worker();
@@ -28,6 +29,8 @@ pub fn run() {
             commands::solve_circuit,
             commands::init_worker,
             commands::send_command,
+            commands::save_circuit_file,
+            commands::load_circuit_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

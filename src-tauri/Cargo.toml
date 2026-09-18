@@ -26,6 +26,7 @@ tauri-plugin-fs = "2"
 nalgebra = "0.35.0"
 thiserror = "2.0.20"
 tokio = { version = "1.53.1", features = ["full"] }
+tauri-plugin-dialog = "2.7.3"
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
