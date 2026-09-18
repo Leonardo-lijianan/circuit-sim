@@ -567,3 +567,32 @@ body {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
 }
+
+/* ============================================================
+   多选面板（Task 7.4）
+   ============================================================ */
+
+.multi-selection-info {
+  padding: 12px 4px;
+}
+
+.multi-selection-line {
+  font-size: 13px;
+  color: #cdd6f4;
+  padding: 4px 0;
+}
+
+.multi-selection-line strong {
+  color: #89b4fa;
+  font-size: 15px;
+  margin: 0 2px;
+}
+
+.multi-selection-hint {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #313244;
+  font-size: 12px;
+  color: #6c7086;
+  line-height: 1.6;
+}

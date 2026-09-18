@@ -126,13 +126,11 @@ simClient.onOutput((batch) => {
   }
 
   // 更新参数面板（电气数据 + 状态文字 + 表单值）（Task 6.3 + 7.1）
-  const sel = circuitManager.getSelection();
-  if (sel?.kind === 'component') {
-    const selComp = circuitManager.getComponent(sel.id);
-    if (selComp) {
-      panel.updateElectrical(selComp);
-      panel.refreshParams(selComp);
-    }
+  // 只在单选一个元件时更新（多选时面板显示统计信息）
+  const selComp = circuitManager.getSelected();
+  if (selComp) {
+    panel.updateElectrical(selComp);
+    panel.refreshParams(selComp);
   }
 
   // 直接重绘（不走 circuitManager.forceUpdate，避免触发 updateInput 死循环）
@@ -155,13 +153,10 @@ simClient.onStateChange((state) => {
     }
 
     // 同步面板显示：电气数据变 "—"，状态文字复位
-    const sel = circuitManager.getSelection();
-    if (sel?.kind === 'component') {
-      const selComp = circuitManager.getComponent(sel.id);
-      if (selComp) {
-        panel.updateElectrical(selComp);
-        panel.refreshParams(selComp);
-      }
+    const selComp = circuitManager.getSelected();
+    if (selComp) {
+      panel.updateElectrical(selComp);
+      panel.refreshParams(selComp);
     }
 
     coordinator.render();
@@ -193,11 +188,9 @@ circuitManager.onUpdate((circuit: Circuit) => {
   statusBar.updateCircuitStats(circuit);
   panel.update(circuit.selection, circuit.components);
 
-  // 同步选中元件的参数面板显示（如 switch 通过空格切换后）
-  if (circuit.selection?.kind === 'component') {
-    const comp = circuit.components.find(c => c.id === circuit.selection!.id);
-    if (comp) panel.refreshParams(comp);
-  }
+  // 同步选中元件的参数面板显示（仅单选时）
+  const selectedComp = circuitManager.getSelected();
+  if (selectedComp) panel.refreshParams(selectedComp);
 
   coordinator.render();
 

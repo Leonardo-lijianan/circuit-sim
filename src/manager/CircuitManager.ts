@@ -58,7 +58,12 @@ export class CircuitManager {
 
   // ---- 选择：统一 API ----
   select(sel: Selection | null): void {
-    this.selection = sel;
+    // 规范化：空数组 → null
+    if (sel && sel.componentIds.length === 0 && sel.wireIds.length === 0) {
+      this.selection = null;
+    } else {
+      this.selection = sel;
+    }
     this.triggerUpdate();
   }
 
@@ -66,39 +71,85 @@ export class CircuitManager {
     return this.selection;
   }
 
-  isSelected(kind: Selection['kind'], id: number): boolean {
-    return this.selection?.kind === kind && this.selection.id === id;
+  isSelected(kind: 'component' | 'wire', id: number): boolean {
+    if (!this.selection) return false;
+    if (kind === 'component') return this.selection.componentIds.includes(id);
+    return this.selection.wireIds.includes(id);
   }
 
   /**
-   * 删除当前选择（内部分发到 removeComponent / removeWire）
+   * 删除当前选择（所有选中元件和电线）
    */
   deleteSelection(): void {
-    const sel = this.selection;
-    if (!sel) return;
+    if (!this.selection) return;
+    const compIds = [...this.selection.componentIds];
+    const wireIds = [...this.selection.wireIds];
 
-    if (sel.kind === 'component') {
-      this.removeComponent(sel.id);
-    } else if (sel.kind === 'wire') {
-      this.removeWire(sel.id);
+    // 先删独立选中的电线
+    for (const id of wireIds) this.removeWire(id);
+    // 再删元件（元件删除会级联删关联电线）
+    for (const id of compIds) this.removeComponent(id);
+  }
+
+  // ---- 选择：语法糖（单选，会清空其他选择） ----
+  selectComponent(id: number | null): void {
+    if (id === null) {
+      this.select(null);
+    } else {
+      this.select({ componentIds: [id], wireIds: [] });
     }
   }
 
-  // ---- 选择：语法糖 ----
-  selectComponent(id: number | null): void {
-    this.select(id === null ? null : { kind: 'component', id });
+  selectWire(id: number | null): void {
+    if (id === null) {
+      this.select(null);
+    } else {
+      this.select({ componentIds: [], wireIds: [id] });
+    }
   }
 
-  selectWire(id: number | null): void {
-    this.select(id === null ? null : { kind: 'wire', id });
+  // ---- 选择：多选 ----
+  selectMany(componentIds: number[], wireIds: number[] = []): void {
+    if (componentIds.length === 0 && wireIds.length === 0) {
+      this.select(null);
+    } else {
+      this.select({
+        componentIds: [...componentIds],
+        wireIds: [...wireIds],
+      });
+    }
   }
 
   /**
-   * 获取选中元件的实例（如果选中的是元件）
+   * 获取选中元件的实例（仅当恰好选中 1 个元件时返回，否则 null）
+   * 用于参数面板
    */
   getSelected(): ComponentInstance | null {
-    if (this.selection?.kind !== 'component') return null;
-    return this.getComponent(this.selection.id) || null;
+    if (!this.selection) return null;
+    if (this.selection.componentIds.length !== 1 || this.selection.wireIds.length !== 0) {
+      return null;
+    }
+    return this.getComponent(this.selection.componentIds[0]) || null;
+  }
+
+  /**
+   * 获取所有选中元件实例
+   */
+  getSelectedComponents(): ComponentInstance[] {
+    if (!this.selection) return [];
+    return this.selection.componentIds
+      .map(id => this.getComponent(id))
+      .filter((c): c is ComponentInstance => !!c);
+  }
+
+  /**
+   * 获取所有选中电线实例
+   */
+  getSelectedWires(): Wire[] {
+    if (!this.selection) return [];
+    return this.selection.wireIds
+      .map(id => this.getWire(id))
+      .filter((w): w is Wire => !!w);
   }
 
   getWiresForComponent(compId: number): Wire[] {
@@ -149,9 +200,12 @@ export class CircuitManager {
 
     this.components = this.components.filter(c => c.id !== id);
 
-    // 如果选中的是被删除的元件，清除选择
-    if (this.selection?.kind === 'component' && this.selection.id === id) {
-      this.selection = null;
+    // 从选择列表中移除
+    if (this.selection) {
+      this.selection.componentIds = this.selection.componentIds.filter(cid => cid !== id);
+      if (this.selection.componentIds.length === 0 && this.selection.wireIds.length === 0) {
+        this.selection = null;
+      }
     }
 
     this.triggerUpdate();
@@ -287,9 +341,12 @@ export class CircuitManager {
   removeWire(id: number): void {
     this.wires = this.wires.filter(w => w.id !== id);
 
-    // 如果选中的是被删除的电线，清除选择
-    if (this.selection?.kind === 'wire' && this.selection.id === id) {
-      this.selection = null;
+    // 从选择列表中移除
+    if (this.selection) {
+      this.selection.wireIds = this.selection.wireIds.filter(wid => wid !== id);
+      if (this.selection.componentIds.length === 0 && this.selection.wireIds.length === 0) {
+        this.selection = null;
+      }
     }
 
     this.triggerUpdate();

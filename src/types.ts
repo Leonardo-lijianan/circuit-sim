@@ -156,10 +156,12 @@ export interface Circuit {
   selection: Selection | null;
 }
 
-// ===== 选择模型（支持元件 / 电线，未来可扩展） =====
-export type Selection =
-  | { kind: 'component'; id: number }
-  | { kind: 'wire'; id: number };
+// ===== 选择模型（多选） =====
+// 空数组表示该类对象未选中；selection 为 null 表示完全无选择
+export interface Selection {
+  componentIds: number[];
+  wireIds: number[];
+}
 
 // ============================================================
 // IPC 合约（给 Rust 的极简负载）

@@ -319,17 +319,24 @@ export class PanelManager {
    */
   update(selection: Selection | null, components: ComponentInstance[]): void {
     // 唯一 key 用于判断选择是否变化
-    const key = selection ? `${selection.kind}:${selection.id}` : null;
+    const key = selection
+      ? `c:${selection.componentIds.join(',')};w:${selection.wireIds.join(',')}`
+      : null;
     if (key === this.lastSelectionKey) return;
     this.lastSelectionKey = key;
 
-    if (!selection) {
+    // 无选择 → 元件库
+    if (
+      !selection ||
+      (selection.componentIds.length === 0 && selection.wireIds.length === 0)
+    ) {
       this.showLibrary();
       return;
     }
 
-    if (selection.kind === 'component') {
-      const comp = components.find(c => c.id === selection.id);
+    // 单选一个元件 → 参数面板
+    if (selection.componentIds.length === 1 && selection.wireIds.length === 0) {
+      const comp = components.find(c => c.id === selection.componentIds[0]);
       if (comp) {
         this.showParams(comp);
       } else {
@@ -338,7 +345,40 @@ export class PanelManager {
       return;
     }
 
-    // 电线 / 其他类型 → 元件库
-    this.showLibrary();
+    // 多选 → 显示统计
+    this.showMultiSelection(selection);
+  }
+
+  /**
+   * 多选时面板（Task 7.4）
+   */
+  showMultiSelection(selection: Selection): void {
+    this.panelIcon.textContent = '📚';
+    this.panelTitle.textContent = '多选';
+    this.panelContent.innerHTML = '';
+    this.currentForm = null;
+    this.currentCompId = null;
+    this.electricalEls = { voltage: null, current: null, power: null };
+    this.headerInfoEl = null;
+
+    const info = document.createElement('div');
+    info.className = 'multi-selection-info';
+
+    const compLine = document.createElement('div');
+    compLine.className = 'multi-selection-line';
+    compLine.innerHTML = `已选中 <strong>${selection.componentIds.length}</strong> 个元件`;
+    info.appendChild(compLine);
+
+    const wireLine = document.createElement('div');
+    wireLine.className = 'multi-selection-line';
+    wireLine.innerHTML = `已选中 <strong>${selection.wireIds.length}</strong> 条连线`;
+    info.appendChild(wireLine);
+
+    const hint = document.createElement('div');
+    hint.className = 'multi-selection-hint';
+    hint.textContent = '提示：按 D 键两次可删除全部选中';
+    info.appendChild(hint);
+
+    this.panelContent.appendChild(info);
   }
 }
