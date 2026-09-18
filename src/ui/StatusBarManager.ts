@@ -84,4 +84,24 @@ export class StatusBarManager {
       this.simStatusEl.textContent = status;
     }
   }
+
+  /**
+   * 根据 Worker 状态更新仿真状态栏（文字 + 圆点 class）
+   */
+  updateSimState(state: 'idle' | 'running' | 'paused' | 'stopped'): void {
+    const labelMap: Record<string, string> = {
+      idle: '停止',
+      running: '运行',
+      paused: '暂停',
+      stopped: '停止',
+    };
+    if (this.simStatusEl) {
+      this.simStatusEl.textContent = labelMap[state] || state;
+    }
+
+    const dot = document.getElementById('statusDot');
+    if (dot) {
+      dot.className = `status-dot ${state}`;
+    }
+  }
 }

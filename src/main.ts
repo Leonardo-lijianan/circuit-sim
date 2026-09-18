@@ -18,11 +18,11 @@ import { KeyboardManager } from './io/KeyboardManager';
 import { MouseManager } from './io/MouseManager';
 import { InteractionManager } from './interaction/InteractionManager';
 import { hitTestCircle, hitTestRect, hitTestSnap, hitTest } from './utils/hitTest';
-import { Channel, invoke } from '@tauri-apps/api/core';
 import { SimulationClient } from './sim/SimulationClient';
-import type { Circuit } from './types';
+import { evaluateTransition } from './sim/stateTransition';
+import type { Circuit, SolverInput } from './types';
 
-console.log('🚀 Phase 0: 电路仿真系统启动');
+console.log('🚀 电路仿真系统启动');
 
 // ============================================================
 // 1. 加载元件
@@ -46,16 +46,9 @@ console.log(`📐 Canvas 尺寸: ${canvasManager.getSize().width} × ${canvasMan
 // 3. 核心模块
 // ============================================================
 
-// 3.1 交互核心
 const interaction = new InteractionManager();
-
-// 3.2 数据管理 (Phase 3 新增)
 const circuitManager = new CircuitManager(loader);
-
-// 3.3 渲染器
 const renderer = new CircuitRenderer(ctx, loader);
-
-// 3.4 渲染协调器
 const coordinator = new RenderCoordinator({
   renderer,
   canvasManager,
@@ -64,30 +57,20 @@ const coordinator = new RenderCoordinator({
 });
 
 // ============================================================
-// 4. UI 管理器 (实例化即自动绑定)
+// 4. UI 管理器
 // ============================================================
 
-new ToolbarManager(interaction);
+const toolbar = new ToolbarManager(interaction);
 const panel = new PanelManager(loader);
 const statusBar = new StatusBarManager();
-new KeyboardManager({
-  interaction,
-  circuitManager,
-  statusBar,
-});
+new KeyboardManager({ interaction, circuitManager, statusBar });
 
 // ============================================================
 // 5. 鼠标事件管理
 // ============================================================
 
-/* const mouseManager = */ new MouseManager({
-  canvas,
-  interaction,
-  statusBar,
-  coordinator,
-});
+new MouseManager({ canvas, interaction, statusBar, coordinator });
 
-// 注入 hitTest 上下文
 interaction.setContext(
   loader,
   () => circuitManager.getComponents(),
@@ -95,33 +78,118 @@ interaction.setContext(
 );
 
 // ============================================================
-// 6. 注册回调（数据 / 模式 / 窗口变化 → 触发重绘）
+// 6. SimulationClient（Phase 5）
 // ============================================================
 
-// 6.1 数据更新 → 更新状态栏 / 面板 / 重绘
+const simClient = new SimulationClient();
+(window as any).__simClient = simClient;
+
+/**
+ * 从画布电路提取 SolverInput
+ */
+function buildSolverInput(): SolverInput {
+  return {
+    analysis: { type: 'dc' },
+    components: circuitManager.getComponents().map(c =>
+      loader.extractSolverComponent(c)
+    ),
+    wires: circuitManager.getWires().map(w => ({
+      start: { componentId: w.startComponentId, pinId: w.startPinId },
+      end: { componentId: w.endComponentId, pinId: w.endPinId },
+    })),
+  };
+}
+
+// 收到求解结果 → 更新元件 electrical + state → 重绘
+simClient.onOutput((batch) => {
+  for (const res of batch) {
+    const comp = circuitManager.getComponent(res.componentId);
+    if (!comp) continue;
+
+    comp.electrical = {
+      voltage: res.voltage,
+      current: res.current,
+      power: res.power,
+    };
+
+    // 评估状态转换规则
+    const def = loader.getDefinition(comp.type);
+    if (def?.state_transition) {
+      const newState = evaluateTransition(def.state_transition, comp.electrical);
+      if (typeof newState === 'string') {
+        comp.state = newState;
+      }
+    }
+  }
+
+  // 直接重绘（不走 circuitManager.forceUpdate，避免触发 updateInput 死循环）
+  coordinator.render();
+});
+
+// 状态变化 → 更新状态栏 / 按钮 / 清空结果（仅 stopped）
+simClient.onStateChange((state) => {
+  console.log(`🎯 Worker 状态: ${state}`);
+
+  statusBar.updateSimState(state);
+  toolbar.setSimState(state);
+
+  // stopped：清空所有元件的电气数据，恢复到 default_state
+  if (state === 'stopped') {
+    for (const comp of circuitManager.getComponents()) {
+      comp.electrical = undefined;
+      const def = loader.getDefinition(comp.type);
+      comp.state = def?.visual.default_state || 'default';
+    }
+    coordinator.render();
+  }
+});
+
+// 错误 → 状态栏提示
+simClient.onError((msg) => {
+  console.error('❌ Worker 错误:', msg);
+  statusBar.showWarning(msg);
+});
+
+// 初始化 SimulationClient
+(async () => {
+  try {
+    await simClient.init();
+    await simClient.stop();  // 复位（应对 F5）
+    console.log('🔬 SimulationClient 已就绪');
+  } catch (err) {
+    console.error('❌ SimulationClient 初始化失败:', err);
+  }
+})();
+
+// ============================================================
+// 7. 注册回调（数据 / 模式 / 窗口变化 → 触发重绘）
+// ============================================================
+
 circuitManager.onUpdate((circuit: Circuit) => {
   statusBar.updateCircuitStats(circuit);
   panel.update(circuit.selection, circuit.components);
   coordinator.render();
+
+  // 只在 Worker Running 时推送（Idle/Stopped 时推了也没用）
+  if (simClient.getState() === 'running') {
+    simClient.updateInput(buildSolverInput());
+  }
 });
 
-// 6.1.1 数据层消息 → 状态栏提示
 circuitManager.onMessage((msg) => {
   statusBar.showWarning(msg);
 });
 
-// 6.2 pending 变化 → 重绘（清除预览或显示新预览）
 interaction.onPendingChange(() => {
   coordinator.render();
 });
 
-// 6.3 窗口尺寸变化 → 更新状态栏 + 重绘
 canvasManager.onResize(() => {
   statusBar.updateCircuitStats(circuitManager.getCircuit());
   coordinator.render();
 });
 
-// 6.4 Place 模式回调：放置元件
+// Place 模式回调
 interaction.onPlace((type: string, x: number, y: number) => {
   const comp = circuitManager.addComponent(type, x, y);
   if (comp) {
@@ -130,22 +198,18 @@ interaction.onPlace((type: string, x: number, y: number) => {
   }
 });
 
-// Select 模式：选中元件
 interaction.onSelectComponent((id) => {
   circuitManager.selectComponent(id);
 });
 
-// Select 模式：选中电线
 interaction.onSelectWire((id) => {
   circuitManager.selectWire(id);
 });
 
-// Select 模式：拖拽移动
 interaction.onMove((id, x, y) => {
   circuitManager.moveComponent(id, x, y);
 });
 
-// Wire 模式：完成连线
 interaction.onWireComplete((start, end) => {
   const wire = circuitManager.addWire(start, end);
   if (wire) {
@@ -153,28 +217,52 @@ interaction.onWireComplete((start, end) => {
   }
 });
 
-// 6.5 注入 InteractionManager 到 PanelManager
 panel.setInteraction(interaction);
 
 // ============================================================
-// 7. 构造测试电路
+// 8. 工具栏按钮接线
 // ============================================================
 
-// LED
-const led = circuitManager.addComponent('led', 200, 200);
-if (led) {
-  led.params.forward_voltage = 1.8;
-  led.state = 'off';
+document.getElementById('btnStart')?.addEventListener('click', async () => {
+  // 每次开始/恢复前先同步电路数据（Rust 侧 Stop 会清空缓存）
+  await simClient.updateInput(buildSolverInput());
+  await simClient.start();
+});
+document.getElementById('btnPause')?.addEventListener('click', () => {
+  simClient.pause();
+});
+document.getElementById('btnStop')?.addEventListener('click', () => {
+  simClient.stop();
+});
+
+// ============================================================
+// 9. 构造测试电路：5V 电池 + LED + 1000Ω 电阻（闭合回路）
+// ============================================================
+
+// 电池
+const battery = circuitManager.addComponent('battery', 100, 200);
+if (battery) {
+  battery.params.voltage = 5.0;
 }
+
+// LED
+const led = circuitManager.addComponent('led', 250, 200);
 
 // 电阻
 const resistor = circuitManager.addComponent('resistor', 400, 200);
 if (resistor) {
   resistor.params.resistance = 1000;
-  resistor.state = 'default';
 }
 
-// 连线
+// 连线：battery.pos → led.a
+if (battery && led) {
+  circuitManager.addWire(
+    { componentId: battery.id, pinId: 'pos' },
+    { componentId: led.id, pinId: 'a' }
+  );
+}
+
+// 连线：led.k → resistor.p1
 if (led && resistor) {
   circuitManager.addWire(
     { componentId: led.id, pinId: 'k' },
@@ -182,29 +270,26 @@ if (led && resistor) {
   );
 }
 
+// 连线：resistor.p2 → battery.neg
+if (resistor && battery) {
+  circuitManager.addWire(
+    { componentId: resistor.id, pinId: 'p2' },
+    { componentId: battery.id, pinId: 'neg' }
+  );
+}
+
 // ============================================================
-// 8. 首次渲染
+// 10. 首次渲染
 // ============================================================
 
 statusBar.updateCircuitStats(circuitManager.getCircuit());
 coordinator.render();
 
 // ============================================================
-// 9. 调试接口
+// 11. 调试接口
 // ============================================================
 
-let ledOn = false;
-(window as any).__toggleLED = () => {
-  const comps = circuitManager.getComponents();
-  const led = comps.find(c => c.type === 'led');
-  if (!led) return;
-  ledOn = !ledOn;
-  led.state = ledOn ? 'on' : 'off';
-  console.log(`💡 LED 状态: ${led.state}`);
-  circuitManager.forceUpdate();
-};
-
-(window as any).__circuit = circuitManager.getCircuit();
+(window as any).__circuit = circuitManager.getCircuit;
 (window as any).__loader = loader;
 (window as any).__renderer = renderer;
 (window as any).__interaction = interaction;
@@ -214,93 +299,4 @@ let ledOn = false;
 (window as any).__hitTestSnap = hitTestSnap;
 (window as any).__hitTest = hitTest;
 
-console.log('✅ 系统就绪：当前进度： Phase 5 Task 5.1（Tauri command）');
-console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');
-
-// ============================================================
-// Phase 5 调试：测试 invoke solve_circuit
-// ============================================================
-
-(window as any).__solveCircuit = async () => {
-  const input = {
-    analysis: { type: 'dc' },
-    components: [
-      { id: 1, func: 'voltage_source', params: { V: 1.5 }, pins: [{ id: 'neg' }, { id: 'pos' }] },
-      { id: 2, func: 'ohm', params: { R: 1000 }, pins: [{ id: 'p1' }, { id: 'p2' }] },
-    ],
-    wires: [
-      { start: { componentId: 1, pinId: 'pos' }, end: { componentId: 2, pinId: 'p1' } },
-      { start: { componentId: 1, pinId: 'neg' }, end: { componentId: 2, pinId: 'p2' } },
-    ],
-  };
-  try {
-    const result = await invoke('solve_circuit', { input });
-    console.log('🔬 solve_circuit 结果:', result);
-    return result;
-  } catch (err) {
-    console.error('❌ solve_circuit 失败:', err);
-    throw err;
-  }
-};
-
-console.log('🔬 在控制台执行 __solveCircuit() 测试 Tauri command');
-
-// ============================================================
-// Phase 5 调试：测试常驻 Worker
-// ============================================================
-
-(window as any).__testWorker = async () => {
-  const channel = new Channel<unknown>();
-  channel.onmessage = (msg) => {
-    console.log('📨 收到 Worker 消息:', msg);
-  };
-
-  await invoke('init_worker', { channel });
-
-  const input = {
-    analysis: { type: 'dc' },
-    components: [
-      { id: 1, func: 'voltage_source', params: { V: 1.5 }, pins: [{ id: 'neg' }, { id: 'pos' }] },
-      { id: 2, func: 'ohm', params: { R: 1000 }, pins: [{ id: 'p1' }, { id: 'p2' }] },
-    ],
-    wires: [
-      { start: { componentId: 1, pinId: 'pos' }, end: { componentId: 2, pinId: 'p1' } },
-      { start: { componentId: 1, pinId: 'neg' }, end: { componentId: 2, pinId: 'p2' } },
-    ],
-  };
-  await invoke('send_command', { cmd: 'UpdateInput', payload: input });
-
-  await invoke('send_command', { cmd: 'Start' });
-  console.log('▶️ 已发送 Start');
-
-  setTimeout(() => {
-    invoke('send_command', { cmd: 'Pause' });
-    console.log('⏸️ 已发送 Pause');
-  }, 500);
-
-  setTimeout(() => {
-    invoke('send_command', { cmd: 'Stop' });
-    console.log('⏹️ 已发送 Stop');
-  }, 1000);
-};
-
-console.log('🔬 在控制台执行 __testWorker() 测试常驻 Worker');
-
-// ============================================================
-// Phase 5：SimulationClient 实例（Task 5.5）
-// ============================================================
-
-const simClient = new SimulationClient();
-
-(window as any).__simClient = simClient;
-
-// ★ 启动时自动初始化 + 停止（应对 F5 刷新导致的旧 Channel 失效）
-(async () => {
-  try {
-    await simClient.init();
-    await simClient.stop();
-    console.log('🔬 SimulationClient 已就绪（Worker 已复位）');
-  } catch (err) {
-    console.error('❌ SimulationClient 初始化失败:', err);
-  }
-})();
+console.log('✅ 系统就绪：Phase 5 Task 5.6a（核心联调）');

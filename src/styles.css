@@ -79,6 +79,11 @@ body {
   background: #45475a;
 }
 
+#toolbar button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 #toolbar button.active {
   background: #89b4fa;
   color: #11111b;

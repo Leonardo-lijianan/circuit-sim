@@ -32,4 +32,25 @@ export class ToolbarManager {
       modeDisplay.textContent = this.interaction.getDisplayLabel();
     }
   }
+
+  /**
+   * 根据 Worker 状态更新仿真控制按钮的禁用状态
+   * 
+   *   idle/stopped: 开始✅ 暂停❌ 停止❌
+   *   running:      开始❌ 暂停✅ 停止✅
+   *   paused:       开始✅ 暂停❌ 停止✅
+   */
+  setSimState(state: 'idle' | 'running' | 'paused' | 'stopped'): void {
+    const btnStart = document.getElementById('btnStart') as HTMLButtonElement | null;
+    const btnPause = document.getElementById('btnPause') as HTMLButtonElement | null;
+    const btnStop = document.getElementById('btnStop') as HTMLButtonElement | null;
+
+    const canStart = state === 'idle' || state === 'stopped' || state === 'paused';
+    const canPause = state === 'running';
+    const canStop = state === 'running' || state === 'paused';
+
+    if (btnStart) btnStart.disabled = !canStart;
+    if (btnPause) btnPause.disabled = !canPause;
+    if (btnStop) btnStop.disabled = !canStop;
+  }
 }
