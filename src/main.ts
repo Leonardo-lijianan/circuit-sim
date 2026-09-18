@@ -220,7 +220,7 @@ console.log('💡 在控制台执行 __toggleLED() 切换 LED 亮灭');
 // Phase 5 调试：测试 invoke solve_circuit
 // ============================================================
 
-import { invoke } from '@tauri-apps/api/core';
+import { Channel, invoke } from '@tauri-apps/api/core';
 
 (window as any).__solveCircuit = async () => {
   // 构造一个最小电路：1.5V 电池 + 1000Ω 电阻
@@ -246,3 +246,50 @@ import { invoke } from '@tauri-apps/api/core';
 };
 
 console.log('🔬 在控制台执行 __solveCircuit() 测试 Tauri command');
+
+// ============================================================
+// Phase 5 调试：测试常驻 Worker
+// ============================================================
+
+(window as any).__testWorker = async () => {
+  // 1. 创建 Channel，监听 Worker 推送的消息
+  const channel = new Channel<unknown>();
+  channel.onmessage = (msg) => {
+    console.log('📨 收到 Worker 消息:', msg);
+  };
+
+  // 2. 初始化 Worker（把 Channel 传进去）
+  await invoke('init_worker', { channel });
+
+  // 3. 发送 UpdateInput，给 Worker 一个电路
+  const input = {
+    analysis: { type: 'dc' },
+    components: [
+      { id: 1, func: 'voltage_source', params: { V: 1.5 }, pins: [{ id: 'neg' }, { id: 'pos' }] },
+      { id: 2, func: 'ohm', params: { R: 1000 }, pins: [{ id: 'p1' }, { id: 'p2' }] },
+    ],
+    wires: [
+      { start: { componentId: 1, pinId: 'pos' }, end: { componentId: 2, pinId: 'p1' } },
+      { start: { componentId: 1, pinId: 'neg' }, end: { componentId: 2, pinId: 'p2' } },
+    ],
+  };
+  await invoke('send_command', { cmd: 'UpdateInput', payload: input });
+
+  // 4. 发送 Start
+  await invoke('send_command', { cmd: 'Start' });
+  console.log('▶️ 已发送 Start');
+
+  // 5. 等 500ms 后 Pause
+  setTimeout(() => {
+    invoke('send_command', { cmd: 'Pause' });
+    console.log('⏸️ 已发送 Pause');
+  }, 500);
+
+  // 6. 再等 500ms 后 Stop
+  setTimeout(() => {
+    invoke('send_command', { cmd: 'Stop' });
+    console.log('⏹️ 已发送 Stop');
+  }, 1000);
+};
+
+console.log('🔬 在控制台执行 __testWorker() 测试常驻 Worker');
