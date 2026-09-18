@@ -184,10 +184,9 @@ fn fill_voltage_source(
     }
     b[k] = v;
 
-    // KCL 贡献（第 k 列）：I_k 从 pos 流出、从 neg 流入
-    // 在 KCL "流出节点电流和 = 0" 中：
-    //   pos 节点流出 I_k → +I_k 项（系数 +1）
-    //   neg 节点流入 I_k → -I_k 项（系数 -1）
+    // KCL 贡献（第 k 列）：x[k] = 从外部流入 pos 端的电流（关联参考方向）
+    // pos 节点流出项里 +x[k]（流入取负，移到 KCL 流出方程左边就是 +）
+    // neg 节点流出项里 -x[k]
     if let Some(i) = mp {
         a[(i, k)] += 1.0;
     }
@@ -219,12 +218,14 @@ fn fill_current_source(
     let node_a = get_pin_node(comp, &pin_a.id, ctx)?;
     let node_b = get_pin_node(comp, &pin_b.id, ctx)?;
 
-    // KCL: 从 a 流出 current → 移到右边 = -current；从 b 流入 current → 移到右边 = +current
+    // KCL "流出 = 0" 移项到右边：
+    //   节点 a：电流源从 a 端流出 current（流入节点 a）→ 移项后 b[a] = +current
+    //   节点 b：电流源从 b 端流入 current（流出节点 b）→ 移项后 b[b] = -current
     if let Some(mat_a) = n2m.get(&node_a).copied() {
-        b[mat_a] -= current;
+        b[mat_a] += current;
     }
     if let Some(mat_b) = n2m.get(&node_b).copied() {
-        b[mat_b] += current;
+        b[mat_b] -= current;
     }
 
     Ok(())
