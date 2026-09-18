@@ -50,21 +50,38 @@ export class RenderCoordinator {
     const circuit = this.circuitManager.getCircuit();
     const { width, height } = this.canvasManager.getSize();
 
-    // Place 模式下显示半透明预览
+    const overlays: {
+      place?: { type: string; x: number; y: number };
+      wire?: { startX: number; startY: number; endX: number; endY: number; snapped: boolean };
+      hoverPin?: { componentId: number; pinId: string };
+    } = {};
+
+    // Place 模式预览
     if (this.interaction.isPlacePending() && this.lastMousePos) {
       const type = this.interaction.getPlaceType();
       if (type) {
         const w = 60;
         const h = 40;
-        this.renderer.render(circuit, width, height, {
+        overlays.place = {
           type,
           x: this.lastMousePos.x - w / 2,
           y: this.lastMousePos.y - h / 2,
-        });
-        return;
+        };
       }
     }
 
-    this.renderer.render(circuit, width, height);
+    // Wire 模式预览
+    const wirePreview = this.interaction.getWirePreview();
+    if (wirePreview) {
+      overlays.wire = wirePreview;
+    } else {
+      // 非连线中：显示悬停引脚高亮
+      const hoverPin = this.interaction.getHoverPin();
+      if (hoverPin) {
+        overlays.hoverPin = hoverPin;
+      }
+    }
+
+    this.renderer.render(circuit, width, height, overlays);
   }
 }

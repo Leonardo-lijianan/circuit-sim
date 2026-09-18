@@ -1,8 +1,8 @@
 // src/interaction/InteractionManager.ts
 
-import type { Mode, PendingAction, ComponentInstance } from '../types';
+import type { Mode, PendingAction, ComponentInstance, PinRef } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
-import { hitTest } from '../utils/hitTest';
+import { hitTest, hitTestSnap, hitTestPin } from '../utils/hitTest';
 
 export class InteractionManager {
   private mode: Mode = 'select';
@@ -29,6 +29,16 @@ export class InteractionManager {
   private onSelectCallback?: (id: number | null) => void;
   private onMoveCallback?: (id: number, x: number, y: number) => void;
 
+  // Wire 模式状态
+  private wireMousePos: { x: number; y: number } | null = null;
+  private wireSnap: { snapped: boolean; x: number; y: number; ref: PinRef | null } | null = null;
+
+  // Wire 模式回调
+  private onWireCompleteCallback?: (start: PinRef, end: PinRef) => void;
+
+  // 悬停的引脚（所有模式通用）
+  private hoverPin: PinRef | null = null;
+
   constructor() {
     // 初始化光标为当前模式对应的样式（默认 Select → default）
     this.updateCursor();
@@ -48,11 +58,6 @@ export class InteractionManager {
 
     // 如果切换到 Select，清理所有待完成操作
     if (newMode === 'select') {
-      this.clearPending();
-    }
-
-    // 如果从 Wire 切换到其他模式，取消未完成的连线
-    if (this.mode === 'wire' && this.pending?.kind === 'wire') {
       this.clearPending();
     }
 
@@ -76,11 +81,15 @@ export class InteractionManager {
 
   setPending(action: PendingAction): void {
     this.pending = action;
+    this.updateCursor();
     for (const cb of this.onPendingChangeCallbacks) cb(action);
   }
 
   clearPending(): void {
     this.pending = null;
+    this.wireMousePos = null;
+    this.wireSnap = null;
+    this.updateCursor();
     for (const cb of this.onPendingChangeCallbacks) cb(null);
   }
 
@@ -96,12 +105,18 @@ export class InteractionManager {
     return this.mode === 'place';
   }
 
-  isWireMode(): boolean {
-    return this.mode === 'wire';
-  }
-
   isPanMode(): boolean {
     return this.mode === 'pan';
+  }
+
+  /**
+   * 获取当前状态的显示标签（供状态栏使用）
+   */
+  getDisplayLabel(): string {
+    if (this.pending?.kind === 'place') return '放置';
+    if (this.pending?.kind === 'wire') return '连线';
+    if (this.mode === 'pan') return '平移';
+    return '选择';
   }
 
   isPending(): boolean {
@@ -122,6 +137,14 @@ export class InteractionManager {
 
   getWireStart(): { componentId: number; pinId: string } | null {
     return this.pending?.kind === 'wire' ? this.pending.start : null;
+  }
+
+  getHoverPin(): PinRef | null {
+    return this.hoverPin;
+  }
+
+  clearHoverPin(): void {
+    this.hoverPin = null;
   }
 
   // ============================================================
@@ -149,11 +172,7 @@ export class InteractionManager {
       case 'place':
         this.handlePlaceClick(x, y);
         break;
-      case 'wire':
-        // Phase 3 Task 3.6 实现
-        break;
       case 'select':
-        // Phase 3 Task 3.5 实现（选中/拖拽）
         this.handleSelectMouseDown(x, y);
         break;
       default:
@@ -166,9 +185,31 @@ export class InteractionManager {
    * 处理鼠标移动事件（由 MouseManager 调用）
    */
   handleMouseMove(x: number, y: number): void {
-    if (this.mode === 'select') {
-      this.handleSelectMouseMove(x, y);
+    // 更新悬停引脚（所有模式通用）
+    this.updateHoverPin(x, y);
+
+    if (this.mode !== 'select') return;
+
+    // 连线中 → 更新磁吸预览
+    if (this.isWirePending()) {
+      this.handleWireMouseMove(x, y);
+      return;
     }
+
+    // 否则处理拖拽
+    this.handleSelectMouseMove(x, y);
+  }
+
+  /**
+   * 更新悬停引脚（用于视觉反馈）
+   */
+  private updateHoverPin(x: number, y: number): void {
+    if (!this.loader || !this.getComponents) {
+      this.hoverPin = null;
+      return;
+    }
+    const components = this.getComponents();
+    this.hoverPin = hitTestPin(x, y, components, this.loader);
   }
 
   /**
@@ -191,31 +232,44 @@ export class InteractionManager {
     }
 
     const components = this.getComponents();
+
+    // 情况1：正在连线中 → 优先处理连线逻辑
+    if (this.isWirePending()) {
+      this.handleWireMouseDown(x, y);
+      return;
+    }
+
+    // 情况2：检测点击目标
     const result = hitTest(x, y, components, this.loader);
 
+    // 点击引脚 → 开始连线
+    if (result.kind === 'pin') {
+      this.setPending({ kind: 'wire', start: result.ref });
+      this.wireMousePos = { x, y };
+      this.updateCursor();
+      return;
+    }
+
+    // 点击元件 → 选中/拖拽
     if (result.kind === 'component') {
       const comp = components.find(c => c.id === result.id);
       if (!comp) return;
 
-      // 选中
-      this.onSelectCallback?.(result.id);
+      this.onSelectCallback?.(comp.id);
 
-      // 记录拖拽起始状态
       this.dragState = {
-        compId: result.id,
+        compId: comp.id,
         mouseStartX: x,
         mouseStartY: y,
         compStartX: comp.x,
         compStartY: comp.y,
         isDragging: false,
       };
-    } else if (result.kind === 'pin') {
-      // Phase 3.6 实现：自动进入 Wire 模式
-      // 暂时忽略
-    } else {
-      // 点击空白 → 取消选中
-      this.onSelectCallback?.(null);
+      return;
     }
+
+    // 点击空白 → 取消选中
+    this.onSelectCallback?.(null);
   }
 
   private handleSelectMouseMove(x: number, y: number): void {
@@ -272,6 +326,81 @@ export class InteractionManager {
   }
 
   // ============================================================
+  // Wire 模式：连线
+  // ============================================================
+
+  private handleWireMouseDown(x: number, y: number): void {
+    if (!this.loader || !this.getComponents) return;
+
+    const components = this.getComponents();
+    const result = hitTest(x, y, components, this.loader);
+
+    // 点击空白 → 取消连线
+    if (result.kind !== 'pin') {
+      this.clearPending();
+      this.updateCursor();
+      return;
+    }
+
+    const start = this.getWireStart();
+    if (!start) return;
+
+    // 同引脚 → 取消
+    if (start.componentId === result.ref.componentId && start.pinId === result.ref.pinId) {
+      this.clearPending();
+      this.updateCursor();
+      return;
+    }
+
+    // 完成连线
+    this.onWireCompleteCallback?.(start, result.ref);
+    this.clearPending();
+    this.updateCursor();
+  }
+
+  private handleWireMouseMove(x: number, y: number): void {
+    if (!this.isWirePending()) return;
+    if (!this.loader || !this.getComponents) return;
+
+    this.wireMousePos = { x, y };
+
+    // 磁吸检测
+    const components = this.getComponents();
+    this.wireSnap = hitTestSnap(x, y, components, this.loader);
+  }
+
+  /**
+   * 获取当前 Wire 模式的预览数据（供 RenderCoordinator 使用）
+   */
+  getWirePreview(): { startX: number; startY: number; endX: number; endY: number; snapped: boolean } | null {
+    if (!this.isWirePending()) return null;
+    if (!this.wireMousePos) return null;
+    if (!this.loader || !this.getComponents) return null;
+
+    const start = this.getWireStart();
+    if (!start) return null;
+
+    // 获取起点引脚的世界坐标
+    const components = this.getComponents();
+    const startComp = components.find(c => c.id === start.componentId);
+    if (!startComp) return null;
+    const def = this.loader.getDefinition(startComp.type);
+    if (!def) return null;
+    const startPin = def.pins.find(p => p.id === start.pinId);
+    if (!startPin) return null;
+
+    const startX = startComp.x + startPin.x;
+    const startY = startComp.y + startPin.y;
+
+    // 终点：磁吸则用吸附位置，否则用鼠标位置
+    const snap = this.wireSnap;
+    const endX = snap?.snapped ? snap.x : this.wireMousePos.x;
+    const endY = snap?.snapped ? snap.y : this.wireMousePos.y;
+
+    return { startX, startY, endX, endY, snapped: snap?.snapped ?? false };
+  }
+
+  // ============================================================
   // Place 模式回调注册
   // ============================================================
 
@@ -296,6 +425,13 @@ export class InteractionManager {
     this.onMoveCallback = callback;
   }
 
+  /**
+   * 注册 Wire 模式回调
+   */
+  onWireComplete(callback: (start: PinRef, end: PinRef) => void): void {
+    this.onWireCompleteCallback = callback;
+  }
+
 
   // ============================================================
   // 私有方法
@@ -311,15 +447,24 @@ export class InteractionManager {
       return;
     }
 
+    // 连线中
+    if (this.isWirePending()) {
+      canvas.style.cursor = 'pointer';
+      return;
+    }
+
+    // 放置中
+    if (this.isPlacePending()) {
+      canvas.style.cursor = 'crosshair';
+      return;
+    }
+
     switch (this.mode) {
       case 'select':
         canvas.style.cursor = 'default';
         break;
       case 'place':
         canvas.style.cursor = 'crosshair';
-        break;
-      case 'wire':
-        canvas.style.cursor = 'pointer';
         break;
       case 'pan':
         canvas.style.cursor = 'grab';

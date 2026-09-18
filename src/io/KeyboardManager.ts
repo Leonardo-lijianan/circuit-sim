@@ -41,10 +41,6 @@ export class KeyboardManager {
         this.clearDeletePending();
         this.interaction.setMode('select');
         break;
-      case '2':
-        this.clearDeletePending();
-        this.interaction.setMode('wire');
-        break;
       case 'Escape':
         this.clearDeletePending();
         if (this.interaction.isPending()) {

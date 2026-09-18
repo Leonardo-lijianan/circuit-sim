@@ -101,6 +101,11 @@ circuitManager.onUpdate((circuit: Circuit) => {
   coordinator.render();
 });
 
+// 6.1.1 数据层消息 → 状态栏提示
+circuitManager.onMessage((msg) => {
+  statusBar.showWarning(msg);
+});
+
 // 6.2 pending 变化 → 重绘（清除预览或显示新预览）
 interaction.onPendingChange(() => {
   coordinator.render();
@@ -130,6 +135,14 @@ interaction.onSelect((id) => {
 // Select 模式：拖拽移动
 interaction.onMove((id, x, y) => {
   circuitManager.moveComponent(id, x, y);
+});
+
+// Wire 模式：完成连线
+interaction.onWireComplete((start, end) => {
+  const wire = circuitManager.addWire(start, end);
+  if (wire) {
+    console.log(`✅ 连线: ${start.componentId}:${start.pinId} → ${end.componentId}:${end.pinId}`);
+  }
 });
 
 // 6.5 注入 InteractionManager 到 PanelManager

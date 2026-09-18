@@ -11,9 +11,21 @@ export class CircuitManager {
   private nextWireId: number = 1;
   private loader: ComponentLoader;
   private onUpdateCallback?: (circuit: Circuit) => void;
+  private onMessageCallback?: (msg: string) => void;
 
   constructor(loader: ComponentLoader) {
     this.loader = loader;
+  }
+
+  /**
+   * 注册消息通知回调（供 UI 层展示提示）
+   */
+  onMessage(callback: (msg: string) => void): void {
+    this.onMessageCallback = callback;
+  }
+
+  private notify(msg: string): void {
+    this.onMessageCallback?.(msg);
   }
 
   // ============================================================
@@ -66,7 +78,7 @@ export class CircuitManager {
   addComponent(type: string, x: number, y: number): ComponentInstance | null {
     const def = this.loader.getDefinition(type);
     if (!def) {
-      console.warn(`⚠️ 未知元件类型: ${type}`);
+      this.notify(`未知元件类型: ${type}`);
       return null;
     }
 
@@ -95,7 +107,7 @@ export class CircuitManager {
     if (relatedWires.length > 0) {
       const wireIds = relatedWires.map(w => w.id);
       this.wires = this.wires.filter(w => !wireIds.includes(w.id));
-      console.log(`🗑️ 删除元件 ${id}，同时删除 ${relatedWires.length} 条关联连线`);
+      this.notify(`已删除 ${relatedWires.length} 条关联连线`);
     }
 
     this.components = this.components.filter(c => c.id !== id);
@@ -126,8 +138,13 @@ export class CircuitManager {
 
   addWire(start: PinRef, end: PinRef): Wire | null {
     if (start.componentId === end.componentId && start.pinId === end.pinId) {
-      console.warn('⚠️ 不能连接到同一个引脚');
+      this.notify('不能连接到同一个引脚');
       return null;
+    }
+
+    // 同一元件的两个不同引脚被短接 → 允许但警告
+    if (start.componentId === end.componentId) {
+      this.notify('警告：同一元件的两引脚被短接');
     }
 
     const exists = this.wires.some(
@@ -138,7 +155,7 @@ export class CircuitManager {
          w.endComponentId === start.componentId && w.endPinId === start.pinId)
     );
     if (exists) {
-      console.warn('⚠️ 连线已存在');
+      this.notify('该连线已存在');
       return null;
     }
 

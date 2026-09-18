@@ -46,14 +46,11 @@ export class MouseManager {
     this.coordinator.setMousePos(pos);
 
 
-    // 分发到 interaction（拖拽需要）
+    // 分发到 interaction
     this.interaction.handleMouseMove(pos.x, pos.y);
 
-
-    // 只有处于 Place 模式时才需要重绘（显示预览）
-    if (this.interaction.isPlacePending()) {
-      this.coordinator.render();
-    }
+    // 鼠标移动始终重绘（含 hover 引脚高亮，性能开销可接受）
+    this.coordinator.render();
   };
 
   private handleMouseUp = (event: MouseEvent): void => {
@@ -64,8 +61,7 @@ export class MouseManager {
 
   private handleMouseLeave = (): void => {
     this.coordinator.setMousePos(null);
-    if (this.interaction.isPlacePending()) {
-      this.coordinator.render();
-    }
+    this.interaction.clearHoverPin();
+    this.coordinator.render();
   };
 }

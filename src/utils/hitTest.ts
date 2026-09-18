@@ -100,6 +100,37 @@ export function hitTestSnap(
 }
 
 /**
+ * 引脚检测（只检测引脚，不检测元件）
+ * 
+ * @param x - 检测点 X 坐标
+ * @param y - 检测点 Y 坐标
+ * @param components - 所有元件实例
+ * @param loader - ComponentLoader 实例
+ * @returns 命中的引脚引用，或 null
+ */
+export function hitTestPin(
+  x: number,
+  y: number,
+  components: ComponentInstance[],
+  loader: ComponentLoader
+): PinRef | null {
+  for (const comp of components) {
+    const def = loader.getDefinition(comp.type);
+    if (!def) continue;
+
+    for (const pin of def.pins) {
+      const pinWorldX = comp.x + pin.x;
+      const pinWorldY = comp.y + pin.y;
+      const radius = pin.hitRadius || 15;
+      if (hitTestCircle(x, y, pinWorldX, pinWorldY, radius)) {
+        return { componentId: comp.id, pinId: pin.id };
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * 综合碰撞检测（先引脚后元件）
  * 遍历所有元件，先检测引脚（圆形），再检测元件（矩形）
  * 

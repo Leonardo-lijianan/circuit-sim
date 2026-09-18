@@ -1,7 +1,7 @@
 // src/renderer/CircuitRenderer.ts
 
 import type { ComponentLoader } from '../loader/ComponentLoader';
-import type { Circuit, ComponentInstance, FlexUnitCache } from '../types';
+import type { Circuit, ComponentInstance, FlexUnitCache, PinRef } from '../types';
 //import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
 
@@ -24,13 +24,19 @@ export class CircuitRenderer {
     circuit: Circuit,
     width: number,
     height: number,
-    preview?: { type: string; x: number; y: number }
+    overlays?: {
+      place?: { type: string; x: number; y: number };
+      wire?: { startX: number; startY: number; endX: number; endY: number; snapped: boolean };
+      hoverPin?: PinRef;
+    }
   ): void {
     this.drawBackground(width, height);
     this.drawWires(circuit);
     this.drawFixLayers(circuit);
     this.drawFlexLayers(circuit);
-    if (preview) this.drawPreview(preview);
+    if (overlays?.place) this.drawPreview(overlays.place);
+    if (overlays?.wire) this.drawTempWire(overlays.wire);
+    else if (overlays?.hoverPin) this.drawHoverPin(overlays.hoverPin, circuit);
     this.drawOverlay(circuit);
   }
 
@@ -174,6 +180,66 @@ export class CircuitRenderer {
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(preview.x - 2, preview.y - 2, w + 4, h + 4);
     ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  /**
+   * 绘制临时连线（Wire 模式）
+   */
+  private drawTempWire(wire: { startX: number; startY: number; endX: number; endY: number; snapped: boolean }): void {
+    const ctx = this.ctx;
+
+    ctx.save();
+
+    // 虚线
+    ctx.strokeStyle = '#a6adc8';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(wire.startX, wire.startY);
+    ctx.lineTo(wire.endX, wire.endY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 起点圆点
+    ctx.fillStyle = '#a6adc8';
+    ctx.beginPath();
+    ctx.arc(wire.startX, wire.startY, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 磁吸目标：放大高亮圈
+    if (wire.snapped) {
+      ctx.strokeStyle = '#89b4fa';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(wire.endX, wire.endY, 10, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /**
+   * 绘制悬停引脚高亮（小圈）
+   */
+  private drawHoverPin(pinRef: PinRef, circuit: Circuit): void {
+    const comp = circuit.components.find(c => c.id === pinRef.componentId);
+    if (!comp) return;
+    const def = this.loader.getDefinition(comp.type);
+    if (!def) return;
+    const pin = def.pins.find(p => p.id === pinRef.pinId);
+    if (!pin) return;
+
+    const ctx = this.ctx;
+    const pinX = comp.x + pin.x;
+    const pinY = comp.y + pin.y;
+
+    ctx.save();
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(pinX, pinY, 10, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
 
