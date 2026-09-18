@@ -7,6 +7,17 @@ import { ParamForm } from './ParamForm';
 
 export type PanelMode = 'library' | 'params' | 'empty';
 
+/**
+ * 格式化电气数值：小于阈值时自动换算为 m 单位（mV / mA / mW）
+ */
+function formatValue(value: number | undefined, mainUnit: string, milliThreshold: number): string {
+  if (value === undefined || value === null || !isFinite(value)) return '—';
+  if (Math.abs(value) < milliThreshold) {
+    return `${(value * 1000).toFixed(3)} m${mainUnit}`;
+  }
+  return `${value.toFixed(3)} ${mainUnit}`;
+}
+
 export class PanelManager {
   private panelContent: HTMLElement;
   private panelIcon: HTMLElement;
@@ -19,6 +30,14 @@ export class PanelManager {
   private paramChangeHandler: ((compId: number, paramId: string, value: any) => void) | null = null;
   // 当前显示的表单实例（Task 6.2 会用来同步外部更新）
   private currentForm: ParamForm | null = null;
+  // 当前正在显示参数面板的元件 id（Task 6.3）
+  private currentCompId: number | null = null;
+  // 电气数据文字节点缓存（Task 6.3，只更新文字不重建 DOM）
+  private electricalEls: {
+    voltage: HTMLElement | null;
+    current: HTMLElement | null;
+    power: HTMLElement | null;
+  } = { voltage: null, current: null, power: null };
 
   constructor(loader: ComponentLoader) {
     this.loader = loader;
@@ -150,6 +169,8 @@ export class PanelManager {
     this.panelTitle.textContent = '参数面板';
     this.panelContent.innerHTML = '';
     this.currentForm = null;
+    this.currentCompId = comp.id;
+    this.electricalEls = { voltage: null, current: null, power: null };
 
     const def = this.loader.getDefinition(comp.type);
     if (!def) {
@@ -178,6 +199,14 @@ export class PanelManager {
     hr.className = 'param-divider';
     this.panelContent.appendChild(hr);
 
+    // 电气数据卡片（Task 6.3）
+    this.panelContent.appendChild(this.createElectricalBlock(comp));
+
+    // 分隔线
+    const hr2 = document.createElement('hr');
+    hr2.className = 'param-divider';
+    this.panelContent.appendChild(hr2);
+
     // 参数表单
     const form = new ParamForm(def, comp, {
       onParamChange: (paramId, value) => {
@@ -195,6 +224,67 @@ export class PanelManager {
   refreshParams(comp: ComponentInstance): void {
     if (this.currentForm) {
       this.currentForm.updateValues(comp);
+    }
+  }
+
+  /**
+   * 更新电气数据显示（Task 6.3）
+   * 由 main.ts 的 onOutput 回调调用；只改文字，不重建 DOM
+   */
+  updateElectrical(comp: ComponentInstance): void {
+    if (this.currentCompId !== comp.id) return;
+
+    const e = comp.electrical;
+    if (this.electricalEls.voltage) {
+      this.setText(this.electricalEls.voltage, e ? formatValue(e.voltage, 'V', 1) : '—');
+    }
+    if (this.electricalEls.current) {
+      this.setText(this.electricalEls.current, e ? formatValue(e.current, 'A', 0.01) : '—');
+    }
+    if (this.electricalEls.power) {
+      this.setText(this.electricalEls.power, e ? formatValue(e.power, 'W', 0.01) : '—');
+    }
+  }
+
+  /**
+   * 创建电气数据卡片（内部使用）
+   */
+  private createElectricalBlock(comp: ComponentInstance): HTMLElement {
+    const block = document.createElement('div');
+    block.className = 'electrical-block';
+
+    const makeRow = (label: string, key: 'voltage' | 'current' | 'power', text: string): HTMLElement => {
+      const row = document.createElement('div');
+      row.className = 'electrical-row';
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'label';
+      labelEl.textContent = label;
+      row.appendChild(labelEl);
+
+      const valueEl = document.createElement('span');
+      valueEl.className = 'value';
+      valueEl.textContent = text;
+      row.appendChild(valueEl);
+
+      this.electricalEls[key] = valueEl;
+      return row;
+    };
+
+    const e = comp.electrical;
+    block.appendChild(makeRow('电压', 'voltage', e ? formatValue(e.voltage, 'V', 1) : '—'));
+    block.appendChild(makeRow('电流', 'current', e ? formatValue(e.current, 'A', 0.01) : '—'));
+    block.appendChild(makeRow('功率', 'power', e ? formatValue(e.power, 'W', 0.01) : '—'));
+
+    return block;
+  }
+
+  /**
+   * 更新文字节点（若内容不同才写入，避免不必要的重排）
+   */
+  private setText(el: HTMLElement, text: string): void {
+    if (el.textContent !== text) {
+      el.textContent = text;
     }
   }
 

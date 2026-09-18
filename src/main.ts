@@ -122,6 +122,13 @@ simClient.onOutput((batch) => {
     }
   }
 
+  // 更新参数面板的电气数据显示（Task 6.3）
+  const sel = circuitManager.getSelection();
+  if (sel?.kind === 'component') {
+    const selComp = circuitManager.getComponent(sel.id);
+    if (selComp) panel.updateElectrical(selComp);
+  }
+
   // 直接重绘（不走 circuitManager.forceUpdate，避免触发 updateInput 死循环）
   coordinator.render();
 });

@@ -537,3 +537,33 @@ body {
   text-align: center;
   padding: 20px 0;
 }
+
+/* ============================================================
+   参数面板 - 电气数据卡片（Task 6.3）
+   ============================================================ */
+
+.electrical-block {
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  padding: 8px 12px;
+  margin: 4px 0;
+}
+
+.electrical-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 0;
+  font-size: 12px;
+}
+
+.electrical-row .label {
+  color: #6c7086;
+}
+
+.electrical-row .value {
+  color: #89b4fa;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
