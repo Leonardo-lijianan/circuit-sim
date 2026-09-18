@@ -23,11 +23,10 @@
 
       <div class="sep"></div>
 
-      <!-- 仿真控制 -->
+      <!-- 仿真控制（主按钮 + 次按钮） -->
       <div class="sim-group">
-        <button id="btnStart" class="primary">▶ 开始</button>
-        <button id="btnPause">⏸ 暂停</button>
-        <button id="btnStop">⏹ 停止</button>
+        <button id="btnSimPrimary" class="primary">▶ 开始</button>
+        <button id="btnSimSecondary" style="display:none;">⏹ 结束</button>
       </div>
 
       <div class="sep"></div>
@@ -67,7 +66,7 @@
         仿真: <span class="value" id="simStatus">停止</span>
       </span>
       <span class="item" id="statusMsg"></span>
-      
+
       <div class="spacer"></div>
       <span class="item">元件: <span class="value" id="compCount">0</span></span>
       <span class="item">连线: <span class="value" id="wireCount">0</span></span>

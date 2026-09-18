@@ -128,6 +128,7 @@ export class CircuitManager {
       y,
       w,
       h,
+      rotation: 0,
       params: this.getDefaultParams(def),
       state: def.visual.default_state || 'default',
     };
@@ -162,6 +163,20 @@ export class CircuitManager {
     comp.x = x;
     comp.y = y;
     this.triggerUpdate();
+  }
+
+  /**
+   * 旋转选中元件 90°
+   *
+   * 返回新的旋转角度；如果不是元件或旋转失败则返回 null
+   */
+  rotateComponent(id: number, delta: number = 90): number | null {
+    const comp = this.getComponent(id);
+    if (!comp) return null;
+    const current = comp.rotation || 0;
+    comp.rotation = ((current + delta) % 360 + 360) % 360;
+    this.triggerUpdate();
+    return comp.rotation;
   }
 
   /**

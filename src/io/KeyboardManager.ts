@@ -51,6 +51,12 @@ export class KeyboardManager {
         event.preventDefault();
         this.handleSpaceToggle();
         break;
+      case 'r':
+      case 'R':
+        // R 键：旋转选中元件 90°
+        event.preventDefault();
+        this.handleRotate();
+        break;
       // d 键在 keyup 中处理（避免长按重复触发）
     }
   }
@@ -63,6 +69,18 @@ export class KeyboardManager {
     const sel = this.circuitManager.getSelection();
     if (!sel || sel.kind !== 'component') return;
     this.circuitManager.toggleComponent(sel.id);
+  }
+
+  /**
+   * R 键：旋转当前选中元件 90°
+   */
+  private handleRotate(): void {
+    const sel = this.circuitManager.getSelection();
+    if (!sel || sel.kind !== 'component') return;
+    const newRotation = this.circuitManager.rotateComponent(sel.id, 90);
+    if (newRotation !== null) {
+      this.statusBar.showWarning(`旋转 ${newRotation}°`);
+    }
   }
 
   private handleKeyUp(event: KeyboardEvent): void {

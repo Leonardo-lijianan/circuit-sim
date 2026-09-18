@@ -93,7 +93,7 @@ export class StatusBarManager {
       idle: '停止',
       running: '运行',
       paused: '暂停',
-      stopped: '停止',
+      stopped: '结束',
     };
     if (this.simStatusEl) {
       this.simStatusEl.textContent = labelMap[state] || state;

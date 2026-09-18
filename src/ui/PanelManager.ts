@@ -38,6 +38,8 @@ export class PanelManager {
     current: HTMLElement | null;
     power: HTMLElement | null;
   } = { voltage: null, current: null, power: null };
+  // 顶部「ID · 状态」文字节点缓存（Task 7.1 修复：状态同步）
+  private headerInfoEl: HTMLElement | null = null;
 
   constructor(loader: ComponentLoader) {
     this.loader = loader;
@@ -171,6 +173,7 @@ export class PanelManager {
     this.currentForm = null;
     this.currentCompId = comp.id;
     this.electricalEls = { voltage: null, current: null, power: null };
+    this.headerInfoEl = null;
 
     const def = this.loader.getDefinition(comp.type);
     if (!def) {
@@ -191,6 +194,7 @@ export class PanelManager {
     infoLine.className = 'param-header-info';
     infoLine.textContent = `ID: ${comp.id} · 状态: ${comp.state}`;
     header.appendChild(infoLine);
+    this.headerInfoEl = infoLine;
 
     this.panelContent.appendChild(header);
 
@@ -218,12 +222,19 @@ export class PanelManager {
   }
 
   /**
-   * 外部更新参数后的同步（Task 6.2）
-   * 例如 switch 通过空格键切换后，checkbox 需要同步
+   * 外部更新参数/状态后的同步（Task 6.2 + 7.1）
+   * - 更新表单控件显示值（如 switch 的 checkbox）
+   * - 更新顶部「状态: xxx」文字（如 LED 从 off → on）
    */
   refreshParams(comp: ComponentInstance): void {
     if (this.currentForm) {
       this.currentForm.updateValues(comp);
+    }
+    if (this.headerInfoEl) {
+      const text = `ID: ${comp.id} · 状态: ${comp.state}`;
+      if (this.headerInfoEl.textContent !== text) {
+        this.headerInfoEl.textContent = text;
+      }
     }
   }
 

@@ -122,11 +122,14 @@ simClient.onOutput((batch) => {
     }
   }
 
-  // 更新参数面板的电气数据显示（Task 6.3）
+  // 更新参数面板（电气数据 + 状态文字 + 表单值）（Task 6.3 + 7.1）
   const sel = circuitManager.getSelection();
   if (sel?.kind === 'component') {
     const selComp = circuitManager.getComponent(sel.id);
-    if (selComp) panel.updateElectrical(selComp);
+    if (selComp) {
+      panel.updateElectrical(selComp);
+      panel.refreshParams(selComp);
+    }
   }
 
   // 直接重绘（不走 circuitManager.forceUpdate，避免触发 updateInput 死循环）
@@ -147,6 +150,17 @@ simClient.onStateChange((state) => {
       const def = loader.getDefinition(comp.type);
       comp.state = def?.visual.default_state || 'default';
     }
+
+    // 同步面板显示：电气数据变 "—"，状态文字复位
+    const sel = circuitManager.getSelection();
+    if (sel?.kind === 'component') {
+      const selComp = circuitManager.getComponent(sel.id);
+      if (selComp) {
+        panel.updateElectrical(selComp);
+        panel.refreshParams(selComp);
+      }
+    }
+
     coordinator.render();
   }
 });
@@ -240,16 +254,25 @@ panel.setParamChangeHandler((compId, paramId, value) => {
 // 8. 工具栏按钮接线
 // ============================================================
 
-document.getElementById('btnStart')?.addEventListener('click', async () => {
-  // 每次开始/恢复前先同步电路数据（Rust 侧 Stop 会清空缓存）
-  await simClient.updateInput(buildSolverInput());
-  await simClient.start();
+// 主按钮：开始 / 暂停 / 继续（行为随状态变化）
+document.getElementById('btnSimPrimary')?.addEventListener('click', async () => {
+  const state = simClient.getState();
+  if (state === 'idle' || state === 'stopped') {
+    // 开始前同步电路
+    await simClient.updateInput(buildSolverInput());
+    await simClient.start();
+  } else if (state === 'running') {
+    await simClient.pause();
+  } else if (state === 'paused') {
+    // 恢复前也同步电路（暂停期间用户可能改了电路）
+    await simClient.updateInput(buildSolverInput());
+    await simClient.start();
+  }
 });
-document.getElementById('btnPause')?.addEventListener('click', () => {
-  simClient.pause();
-});
-document.getElementById('btnStop')?.addEventListener('click', () => {
-  simClient.stop();
+
+// 次按钮：结束
+document.getElementById('btnSimSecondary')?.addEventListener('click', async () => {
+  await simClient.stop();
 });
 
 // ============================================================

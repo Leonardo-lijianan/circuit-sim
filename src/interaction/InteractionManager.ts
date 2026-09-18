@@ -3,6 +3,7 @@
 import type { Mode, PendingAction, ComponentInstance, PinRef } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
 import { hitTest, hitTestSnap, hitTestPin, hitTestWires } from '../utils/hitTest';
+import { getPinWorldPos } from '../utils/geometry';
 
 export class InteractionManager {
   private mode: Mode = 'select';
@@ -400,8 +401,9 @@ export class InteractionManager {
     const startPin = def.pins.find(p => p.id === start.pinId);
     if (!startPin) return null;
 
-    const startX = startComp.x + startPin.x;
-    const startY = startComp.y + startPin.y;
+    const startPos = getPinWorldPos(startComp, startPin);
+    const startX = startPos.x;
+    const startY = startPos.y;
 
     // 终点：磁吸则用吸附位置，否则用鼠标位置
     const snap = this.wireSnap;

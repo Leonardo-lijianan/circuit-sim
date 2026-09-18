@@ -4,6 +4,7 @@ import type { ComponentLoader } from '../loader/ComponentLoader';
 import type { Circuit, ComponentInstance, FlexUnitCache, PinRef } from '../types';
 import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
+import { getPinWorldPos, getRotatedAABB } from '../utils/geometry';
 
 export class CircuitRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -122,8 +123,30 @@ export class CircuitRenderer {
 
   private drawFixLayers(circuit: Circuit): void {
     for (const comp of circuit.components) {
-      this.drawOneFix(comp);
+      this.drawWithRotation(comp, () => this.drawOneFix(comp));
     }
+  }
+
+  /**
+   * 用元件自身的旋转包裹一次绘制
+   */
+  private drawWithRotation(comp: ComponentInstance, drawFn: () => void): void {
+    const rotation = comp.rotation || 0;
+    if (rotation === 0) {
+      drawFn();
+      return;
+    }
+
+    const ctx = this.ctx;
+    const cx = comp.x + comp.w / 2;
+    const cy = comp.y + comp.h / 2;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate((rotation * Math.PI) / 180);
+    ctx.translate(-cx, -cy);
+    drawFn();
+    ctx.restore();
   }
 
   private drawOneFlex(comp: ComponentInstance): void {
@@ -142,7 +165,7 @@ export class CircuitRenderer {
 
   private drawFlexLayers(circuit: Circuit): void {
     for (const comp of circuit.components) {
-      this.drawOneFlex(comp);
+      this.drawWithRotation(comp, () => this.drawOneFlex(comp));
     }
   }
 
@@ -200,6 +223,7 @@ export class CircuitRenderer {
       y: preview.y,
       w,
       h,
+      rotation: 0,
       params: {},
       state: def.visual.default_state || 'default',
     };
@@ -269,14 +293,13 @@ export class CircuitRenderer {
     if (!pin) return;
 
     const ctx = this.ctx;
-    const pinX = comp.x + pin.x;
-    const pinY = comp.y + pin.y;
+    const pos = getPinWorldPos(comp, pin);
 
     ctx.save();
     ctx.strokeStyle = '#89b4fa';
     ctx.lineWidth = 2.5;
     ctx.beginPath();
-    ctx.arc(pinX, pinY, 10, 0, Math.PI * 2);
+    ctx.arc(pos.x, pos.y, 10, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   }
@@ -338,6 +361,9 @@ export class CircuitRenderer {
     const pad = 4;
     const s = 6;
 
+    // 用旋转后的 AABB
+    const aabb = getRotatedAABB(comp);
+
     ctx.save();
 
     // 1. 蓝色虚线框
@@ -345,20 +371,20 @@ export class CircuitRenderer {
     ctx.lineWidth = 2.5;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(
-      comp.x - pad,
-      comp.y - pad,
-      comp.w + pad * 2,
-      comp.h + pad * 2
+      aabb.x - pad,
+      aabb.y - pad,
+      aabb.w + pad * 2,
+      aabb.h + pad * 2
     );
     ctx.setLineDash([]);
 
     // 2. 四角锚点
     ctx.fillStyle = '#89b4fa';
     const corners = [
-      [comp.x, comp.y],
-      [comp.x + comp.w, comp.y],
-      [comp.x, comp.y + comp.h],
-      [comp.x + comp.w, comp.y + comp.h],
+      [aabb.x, aabb.y],
+      [aabb.x + aabb.w, aabb.y],
+      [aabb.x, aabb.y + aabb.h],
+      [aabb.x + aabb.w, aabb.y + aabb.h],
     ];
     for (const [x, y] of corners) {
       ctx.fillRect(x - s / 2, y - s / 2, s, s);
@@ -490,6 +516,6 @@ export class CircuitRenderer {
     if (!def) return null;
     const pin = def.pins.find(p => p.id === pinId);
     if (!pin) return null;
-    return { x: comp.x + pin.x, y: comp.y + pin.y };
+    return getPinWorldPos(comp, pin);
   }
 }

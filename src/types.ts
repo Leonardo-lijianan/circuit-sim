@@ -127,6 +127,11 @@ export interface ComponentInstance {
   y: number;
   w: number;
   h: number;
+  /**
+   * 元件旋转角度（度）
+   * 只允许 0 / 90 / 180 / 270
+   */
+  rotation: number;
   params: Record<string, any>;
   state: string;
   electrical?: {

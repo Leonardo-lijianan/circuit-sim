@@ -34,23 +34,39 @@ export class ToolbarManager {
   }
 
   /**
-   * 根据 Worker 状态更新仿真控制按钮的禁用状态
-   * 
-   *   idle/stopped: 开始✅ 暂停❌ 停止❌
-   *   running:      开始❌ 暂停✅ 停止✅
-   *   paused:       开始✅ 暂停❌ 停止✅
+   * 根据 Worker 状态更新仿真控制按钮
+   *
+   *   主按钮：开始 / 暂停 / 继续（安全动作，蓝色高亮）
+   *   次按钮：结束（危险动作，灰色，idle 时隐藏）
+   *
+   *   idle/stopped: 主[▶ 开始]  次[隐藏]
+   *   running:      主[⏸ 暂停]  次[■ 结束]
+   *   paused:       主[▶ 继续]  次[■ 结束]
    */
   setSimState(state: 'idle' | 'running' | 'paused' | 'stopped'): void {
-    const btnStart = document.getElementById('btnStart') as HTMLButtonElement | null;
-    const btnPause = document.getElementById('btnPause') as HTMLButtonElement | null;
-    const btnStop = document.getElementById('btnStop') as HTMLButtonElement | null;
+    const primary = document.getElementById('btnSimPrimary') as HTMLButtonElement | null;
+    const secondary = document.getElementById('btnSimSecondary') as HTMLButtonElement | null;
+    if (!primary || !secondary) return;
 
-    const canStart = state === 'idle' || state === 'stopped' || state === 'paused';
-    const canPause = state === 'running';
-    const canStop = state === 'running' || state === 'paused';
-
-    if (btnStart) btnStart.disabled = !canStart;
-    if (btnPause) btnPause.disabled = !canPause;
-    if (btnStop) btnStop.disabled = !canStop;
+    switch (state) {
+      case 'idle':
+      case 'stopped':
+        primary.textContent = '▶ 开始';
+        primary.classList.add('primary');
+        secondary.style.display = 'none';
+        break;
+      case 'running':
+        primary.textContent = '⏸ 暂停';
+        primary.classList.add('primary');
+        secondary.textContent = '■ 结束';
+        secondary.style.display = '';
+        break;
+      case 'paused':
+        primary.textContent = '▶ 继续';
+        primary.classList.add('primary');
+        secondary.textContent = '■ 结束';
+        secondary.style.display = '';
+        break;
+    }
   }
 }

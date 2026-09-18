@@ -2,6 +2,7 @@
 
 import type { ComponentInstance, PinRef, Wire } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
+import { getPinWorldPos, getRotatedAABB } from './geometry';
 
 /**
  * 点到线段的距离
@@ -96,17 +97,16 @@ export function hitTestSnap(
     if (!def) continue;
 
     for (const pin of def.pins) {
-      const pinWorldX = comp.x + pin.x;
-      const pinWorldY = comp.y + pin.y;
-      const dx = x - pinWorldX;
-      const dy = y - pinWorldY;
+      const pos = getPinWorldPos(comp, pin);
+      const dx = x - pos.x;
+      const dy = y - pos.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < threshold && dist < minDist) {
         minDist = dist;
         nearest = { componentId: comp.id, pinId: pin.id };
-        nearestX = pinWorldX;
-        nearestY = pinWorldY;
+        nearestX = pos.x;
+        nearestY = pos.y;
       }
     }
   }
@@ -138,10 +138,9 @@ export function hitTestPin(
     if (!def) continue;
 
     for (const pin of def.pins) {
-      const pinWorldX = comp.x + pin.x;
-      const pinWorldY = comp.y + pin.y;
+      const pos = getPinWorldPos(comp, pin);
       const radius = pin.hitRadius || 15;
-      if (hitTestCircle(x, y, pinWorldX, pinWorldY, radius)) {
+      if (hitTestCircle(x, y, pos.x, pos.y, radius)) {
         return { componentId: comp.id, pinId: pin.id };
       }
     }
@@ -171,8 +170,8 @@ export function hitTestWires(
   // 逆序遍历，上层优先
   for (let i = wires.length - 1; i >= 0; i--) {
     const wire = wires[i];
-    const start = getPinWorldPos(wire.startComponentId, wire.startPinId, components, loader);
-    const end = getPinWorldPos(wire.endComponentId, wire.endPinId, components, loader);
+    const start = getPinWorldPosByRef(wire.startComponentId, wire.startPinId, components, loader);
+    const end = getPinWorldPosByRef(wire.endComponentId, wire.endPinId, components, loader);
     if (!start || !end) continue;
 
     const dist = pointToSegmentDistance(x, y, start.x, start.y, end.x, end.y);
@@ -184,7 +183,7 @@ export function hitTestWires(
 /**
  * 获取引脚的世界坐标（内部工具）
  */
-function getPinWorldPos(
+function getPinWorldPosByRef(
   compId: number,
   pinId: string,
   components: ComponentInstance[],
@@ -196,7 +195,7 @@ function getPinWorldPos(
   if (!def) return null;
   const pin = def.pins.find(p => p.id === pinId);
   if (!pin) return null;
-  return { x: comp.x + pin.x, y: comp.y + pin.y };
+  return getPinWorldPos(comp, pin);
 }
 
 /**
@@ -221,10 +220,9 @@ export function hitTest(
     if (!def) continue;
 
     for (const pin of def.pins) {
-      const pinWorldX = comp.x + pin.x;
-      const pinWorldY = comp.y + pin.y;
+      const pos = getPinWorldPos(comp, pin);
       const radius = pin.hitRadius || 15;
-      if (hitTestCircle(x, y, pinWorldX, pinWorldY, radius)) {
+      if (hitTestCircle(x, y, pos.x, pos.y, radius)) {
         return { kind: 'pin', ref: { componentId: comp.id, pinId: pin.id } };
       }
     }
@@ -233,7 +231,8 @@ export function hitTest(
   // 2. 再检测元件（矩形，逆序，上层优先）
   for (let i = components.length - 1; i >= 0; i--) {
     const comp = components[i];
-    if (hitTestRect(x, y, comp.x, comp.y, comp.w, comp.h)) {
+    const aabb = getRotatedAABB(comp);
+    if (hitTestRect(x, y, aabb.x, aabb.y, aabb.w, aabb.h)) {
       return { kind: 'component', id: comp.id };
     }
   }
