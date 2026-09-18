@@ -22,8 +22,21 @@ pub struct MnaSystem {
     pub n_nodes: usize,
 }
 
+/// 二极管模型常数
+const DIODE_IS: f64 = 1e-12;       // 反向饱和电流 (A)
+const DIODE_NVT: f64 = 0.02585;    // 热电压 nVt (V)
+const DIODE_V_MAX: f64 = 0.8;      // 正向上限（避免 exp 溢出）
+const DIODE_V_MIN: f64 = -5.0;     // 反向下限
+
 /// 构建 MNA 方程组
-pub fn build_mna(input: &SolverInput, ctx: &CircuitContext) -> Result<MnaSystem, SolverError> {
+/// 
+/// v_guess: 非线性元件线性化时用的工作点（node_index → 电压）；
+///          线性电路传空 HashMap 即可
+pub fn build_mna(
+    input: &SolverInput,
+    ctx: &CircuitContext,
+    v_guess: &HashMap<usize, f64>,
+) -> Result<MnaSystem, SolverError> {
     // 1. 节点重映射：node_index → matrix_index（跳过地节点）
     let mut node_matrix_index: HashMap<usize, usize> = HashMap::new();
     let mut next_idx = 0;
@@ -64,6 +77,9 @@ pub fn build_mna(input: &SolverInput, ctx: &CircuitContext) -> Result<MnaSystem,
             }
             "current_source" => {
                 fill_current_source(comp, ctx, &node_matrix_index, &mut b)?;
+            }
+            "diode" => {
+                fill_diode(comp, ctx, &node_matrix_index, v_guess, &mut a, &mut b)?;
             }
             "ground" => {
                 // GND 不产生贡献，仅作为节点标记
@@ -229,6 +245,89 @@ fn fill_current_source(
     }
 
     Ok(())
+}
+
+/// 二极管：Shockley 方程 I = Is·(exp(V/nVt) - 1)
+/// 线性化后：I ≈ G_d·V + I_eq
+///   其中 G_d = Is/(nVt)·exp(V0/nVt) 是动态电导
+///        I_eq = I_d(V0) - G_d·V0 是等效电流源
+fn fill_diode(
+    comp: &SolverComponent,
+    ctx: &CircuitContext,
+    n2m: &HashMap<usize, usize>,
+    v_guess: &HashMap<usize, f64>,
+    a: &mut DMatrix<f64>,
+    b: &mut DVector<f64>,
+) -> Result<(), SolverError> {
+    // 二极管引脚：a (anode) / k (cathode)
+    let a_pin = comp.pins.iter().find(|p| p.id == "a").ok_or_else(|| {
+        SolverError::MissingPin { component_id: comp.id, pin_id: "a".to_string() }
+    })?;
+    let k_pin = comp.pins.iter().find(|p| p.id == "k").ok_or_else(|| {
+        SolverError::MissingPin { component_id: comp.id, pin_id: "k".to_string() }
+    })?;
+
+    let node_a = get_pin_node(comp, &a_pin.id, ctx)?;
+    let node_k = get_pin_node(comp, &k_pin.id, ctx)?;
+
+    // 当前工作点电压
+    let v_a = get_guess(node_a, ctx, v_guess);
+    let v_k = get_guess(node_k, ctx, v_guess);
+    let v = v_a - v_k;
+    let v_clamped = v.clamp(DIODE_V_MIN, DIODE_V_MAX);
+
+    // 二极管模型
+    let exp_term = (v_clamped / DIODE_NVT).exp();
+    let i_d = DIODE_IS * (exp_term - 1.0);
+    let g_d = DIODE_IS / DIODE_NVT * exp_term;
+
+    // 线性化等效电流源
+    let i_eq = i_d - g_d * v_clamped;
+
+    let ma = n2m.get(&node_a).copied();
+    let mk = n2m.get(&node_k).copied();
+
+    // 电导矩阵贡献
+    match (ma, mk) {
+        (Some(i), Some(j)) => {
+            a[(i, i)] += g_d;
+            a[(j, j)] += g_d;
+            a[(i, j)] -= g_d;
+            a[(j, i)] -= g_d;
+        }
+        (Some(i), None) => {
+            a[(i, i)] += g_d;
+        }
+        (None, Some(j)) => {
+            a[(j, j)] += g_d;
+        }
+        (None, None) => {}
+    }
+
+    // 等效电流源贡献（I_d 从 a 流出，从 k 流入）
+    // 节点 a: I_d 从 a 流出 → b[a] -= i_eq
+    // 节点 k: I_d 从 k 流入 → b[k] += i_eq
+    if let Some(i) = ma {
+        b[i] -= i_eq;
+    }
+    if let Some(j) = mk {
+        b[j] += i_eq;
+    }
+
+    Ok(())
+}
+
+/// 读取节点工作点电压（地节点固定为 0）
+fn get_guess(
+    node_idx: usize,
+    ctx: &CircuitContext,
+    v_guess: &HashMap<usize, f64>,
+) -> f64 {
+    if node_idx == ctx.ground_index {
+        0.0
+    } else {
+        v_guess.get(&node_idx).copied().unwrap_or(0.0)
+    }
 }
 
 // ============================================================

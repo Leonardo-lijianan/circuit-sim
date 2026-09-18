@@ -84,6 +84,15 @@ fn extract_one(
             let k = *vs_index.get(&comp.id).ok_or(SolverError::SingularMatrix)?;
             x[k]
         }
+        "diode" => {
+            // Shockley 方程：I = Is·(exp(V/nVt) - 1)，V = V_a - V_k
+            const DIODE_IS: f64 = 1e-12;
+            const DIODE_NVT: f64 = 0.02585;
+            const V_MAX: f64 = 0.8;
+            const V_MIN: f64 = -5.0;
+            let v_clamped = voltage.clamp(V_MIN, V_MAX);
+            DIODE_IS * ((v_clamped / DIODE_NVT).exp() - 1.0)
+        }
         _ => return Err(SolverError::UnknownSolver(comp.func.clone())),
     };
 

@@ -7,6 +7,7 @@ pub mod graph_builder;
 pub mod matrix_builder;
 pub mod linear_solver;
 pub mod result_extractor;
+pub mod nonlinear;
 pub mod core;
 
 pub use input::*;

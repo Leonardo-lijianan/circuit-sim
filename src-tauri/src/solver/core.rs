@@ -4,19 +4,30 @@ use super::graph_builder::build_graph;
 use super::input::SolverInput;
 use super::linear_solver::solve_linear;
 use super::matrix_builder::build_mna;
+use super::nonlinear::{has_nonlinear, solve_newton};
 use super::output::{SolverError, SolverOutput};
 use super::result_extractor::extract_results;
+use std::collections::HashMap;
 
 /// 求解电路主流程
 ///
 /// 1. 构建图（节点编号 + 浮地检测）
-/// 2. 填充 MNA 矩阵
-/// 3. 线性求解
-/// 4. 提取每个元件的结果
+/// 2. 判断是否含非线性元件
+///    - 是：牛顿迭代
+///    - 否：直接线性求解
+/// 3. 提取每个元件的结果
 pub fn solve(input: &SolverInput) -> Result<Vec<SolverOutput>, SolverError> {
     let ctx = build_graph(input)?;
-    let mna = build_mna(input, &ctx)?;
-    let x = solve_linear(&mna.a, &mna.b)?;
+
+    let (x, mna) = if has_nonlinear(input) {
+        solve_newton(input, &ctx)?
+    } else {
+        let empty = HashMap::new();
+        let mna = build_mna(input, &ctx, &empty)?;
+        let x = solve_linear(&mna.a, &mna.b)?;
+        (x, mna)
+    };
+
     let outputs = extract_results(input, &ctx, &mna, &x)?;
     Ok(outputs)
 }
@@ -162,5 +173,32 @@ mod tests {
         // R 关联方向：p1 流入，p2 流出 → 电流为正
         assert!((res.current - 0.001).abs() < 1e-9, "R I = {}", res.current);
         assert!((res.voltage - 1.0).abs() < 1e-9, "R V = {}", res.voltage);
+    }
+
+    /// 场景4：5V 电池 + 1000Ω + LED，LED 正向导通
+    /// 预期：LED 正向压降约 0.6~0.8V，电流约 4~5mA
+    #[test]
+    fn test_led_with_resistor() {
+        let input = make_input(
+            vec![
+                make_component(1, "voltage_source", &["neg", "pos"], &[("V", 5.0)]),
+                make_component(2, "ohm", &["p1", "p2"], &[("R", 1000.0)]),
+                make_component(3, "diode", &["a", "k"], &[]),
+            ],
+            vec![
+                make_wire(1, "pos", 2, "p1"),
+                make_wire(2, "p2", 3, "a"),
+                make_wire(3, "k", 1, "neg"),
+            ],
+        );
+        let results = solve(&input).unwrap();
+
+        let led = results.iter().find(|r| r.component_id == 3).unwrap();
+        // 二极管正向压降应该在 0.5~0.8V 之间
+        assert!(led.voltage > 0.5 && led.voltage < 0.8, "LED V = {}", led.voltage);
+        // 电流应该在 4~5mA 之间
+        assert!(led.current > 0.003 && led.current < 0.005, "LED I = {}", led.current);
+        // LED 吸收功率
+        assert!(led.power > 0.0);
     }
 }
