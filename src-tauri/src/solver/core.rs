@@ -194,10 +194,11 @@ mod tests {
         let results = solve(&input).unwrap();
 
         let led = results.iter().find(|r| r.component_id == 3).unwrap();
-        // 二极管正向压降应该在 0.5~0.8V 之间
-        assert!(led.voltage > 0.5 && led.voltage < 0.8, "LED V = {}", led.voltage);
-        // 电流应该在 4~5mA 之间
-        assert!(led.current > 0.003 && led.current < 0.005, "LED I = {}", led.current);
+        // 分段线性模型：Vf = 0.7V（默认）+ I·Ron
+        // 期望正向压降 0.7~0.8V
+        assert!(led.voltage > 0.65 && led.voltage < 0.85, "LED V = {}", led.voltage);
+        // 电流应该在 4~4.5mA 之间
+        assert!(led.current > 0.004 && led.current < 0.0045, "LED I = {}", led.current);
         // LED 吸收功率
         assert!(led.power > 0.0);
     }

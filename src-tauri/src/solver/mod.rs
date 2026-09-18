@@ -3,6 +3,7 @@
 pub mod input;
 pub mod output;
 pub mod context;
+pub mod models;
 pub mod graph_builder;
 pub mod matrix_builder;
 pub mod linear_solver;
