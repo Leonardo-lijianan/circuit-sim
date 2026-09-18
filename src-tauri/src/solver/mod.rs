@@ -3,7 +3,9 @@
 pub mod input;
 pub mod output;
 pub mod context;
+pub mod graph_builder;
 
 pub use input::*;
 pub use output::*;
 pub use context::*;
+pub use graph_builder::*;

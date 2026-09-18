@@ -35,6 +35,9 @@ pub enum SolverError {
 
     #[error("电路为空")]
     EmptyCircuit,
+
+    #[error("电路中没有参考地（无 GND 元件，也无电压源）")]
+    NoGround,
 }
 
 #[cfg(test)]

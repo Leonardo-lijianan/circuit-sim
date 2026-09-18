@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0",
+  "name": "gnd",
+  "label": "接地",
+  "fix": { "file": "fix.svg" },
+  "pins": [
+    { "id": "gnd", "x": 20, "y": 0, "label": "GND" }
+  ],
+  "params": [],
+  "visual": {
+    "states": {
+      "default": { "parts": {} }
+    },
+    "default_state": "default"
+  },
+  "model": {
+    "func": "ground",
+    "paramMap": {}
+  }
+}
