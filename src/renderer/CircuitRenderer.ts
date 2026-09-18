@@ -4,7 +4,7 @@ import type { ComponentLoader } from '../loader/ComponentLoader';
 import type { Circuit, ComponentInstance, FlexUnitCache, PinRef } from '../types';
 import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
-import { getPinWorldPos, getRotatedAABB } from '../utils/geometry';
+import { getPinWorldPos, getRotatedAABB, getWirePath } from '../utils/geometry';
 
 export class CircuitRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -97,13 +97,20 @@ export class CircuitRenderer {
       const end = this.getPinWorldPos(wire.endComponentId, wire.endPinId, circuit.components);
       if (!start || !end) continue;
 
+      // 正交路径（Z 字或直线）
+      const path = getWirePath(start, end);
+
       ctx.strokeStyle = '#a6adc8';
       ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
       ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
+      ctx.moveTo(path[0].x, path[0].y);
+      for (let i = 1; i < path.length; i++) {
+        ctx.lineTo(path[i].x, path[i].y);
+      }
       ctx.stroke();
 
+      // 端点圆点（首尾）
       ctx.fillStyle = '#a6adc8';
       ctx.beginPath();
       ctx.arc(start.x, start.y, 4, 0, Math.PI * 2);
@@ -253,13 +260,22 @@ export class CircuitRenderer {
 
     ctx.save();
 
+    // 正交路径（Z 字或直线）
+    const path = getWirePath(
+      { x: wire.startX, y: wire.startY },
+      { x: wire.endX, y: wire.endY }
+    );
+
     // 虚线
     ctx.strokeStyle = '#a6adc8';
     ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
-    ctx.moveTo(wire.startX, wire.startY);
-    ctx.lineTo(wire.endX, wire.endY);
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i++) {
+      ctx.lineTo(path[i].x, path[i].y);
+    }
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -332,13 +348,19 @@ export class CircuitRenderer {
     const ctx = this.ctx;
     ctx.save();
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 正交路径
+    const path = getWirePath(start, end);
 
     // 线条变蓝（粗细、端点大小与原线完全一致）
     ctx.strokeStyle = '#89b4fa';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(start.x, start.y);
-    ctx.lineTo(end.x, end.y);
+    ctx.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i++) {
+      ctx.lineTo(path[i].x, path[i].y);
+    }
     ctx.stroke();
 
     // 端点圆点也变蓝

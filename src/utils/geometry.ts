@@ -64,3 +64,38 @@ export function normalizeRotation(rotation: number): number {
   const r = ((rotation % 360) + 360) % 360;
   return Math.round(r / 90) * 90 % 360;
 }
+
+// ============================================================
+// 电线路径
+// ============================================================
+
+export interface Point {
+  x: number;
+  y: number;
+}
+
+/**
+ * 计算电线的正交路径（Z 字走线）
+ *
+ * 默认策略：横向优先，中点分折
+ *   A → (mx, ay) → (mx, by) → B
+ *   其中 mx = (ax + bx) / 2
+ *
+ * 特殊情况降级为直线：
+ *   - |ay - by| < 2：水平对齐
+ *   - |ax - bx| < 2：垂直对齐
+ *
+ * @returns 折点数组（含首尾）
+ */
+export function getWirePath(a: Point, b: Point): Point[] {
+  const dx = Math.abs(a.x - b.x);
+  const dy = Math.abs(a.y - b.y);
+
+  // 水平或垂直对齐 → 直线
+  if (dy < 2) return [a, b];
+  if (dx < 2) return [a, b];
+
+  // Z 字：横向优先，中点分折
+  const mx = (a.x + b.x) / 2;
+  return [a, { x: mx, y: a.y }, { x: mx, y: b.y }, b];
+}

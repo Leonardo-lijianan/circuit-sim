@@ -2,7 +2,8 @@
 
 import type { ComponentInstance, PinRef, Wire } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
-import { getPinWorldPos, getRotatedAABB } from './geometry';
+import { getPinWorldPos, getRotatedAABB, getWirePath } from './geometry';
+import type { Point } from './geometry';
 
 /**
  * 点到线段的距离
@@ -21,6 +22,26 @@ function pointToSegmentDistance(
   const projX = x1 + t * dx;
   const projY = y1 + t * dy;
   return Math.hypot(px - projX, py - projY);
+}
+
+/**
+ * 点到折线（多点线段串）的距离
+ * 取所有线段距离的最小值
+ */
+function pointToPolylineDistance(
+  px: number, py: number,
+  points: Point[]
+): number {
+  let minDist = Infinity;
+  for (let i = 0; i < points.length - 1; i++) {
+    const d = pointToSegmentDistance(
+      px, py,
+      points[i].x, points[i].y,
+      points[i + 1].x, points[i + 1].y
+    );
+    if (d < minDist) minDist = d;
+  }
+  return minDist;
 }
 
 /**
@@ -174,7 +195,9 @@ export function hitTestWires(
     const end = getPinWorldPosByRef(wire.endComponentId, wire.endPinId, components, loader);
     if (!start || !end) continue;
 
-    const dist = pointToSegmentDistance(x, y, start.x, start.y, end.x, end.y);
+    // 用正交路径（折线）计算命中
+    const path = getWirePath(start, end);
+    const dist = pointToPolylineDistance(x, y, path);
     if (dist <= threshold) return wire.id;
   }
   return null;
