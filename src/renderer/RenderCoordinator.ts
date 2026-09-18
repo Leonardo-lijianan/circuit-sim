@@ -130,6 +130,12 @@ export class RenderCoordinator {
       }
     }
 
+    // 框选矩形（Task 7.4）
+    const marquee = this.interaction.getMarquee();
+    if (marquee) {
+      overlays.marquee = marquee;
+    }
+
     this.renderer.render(circuit, width, height, this.viewport, overlays);
   }
 }

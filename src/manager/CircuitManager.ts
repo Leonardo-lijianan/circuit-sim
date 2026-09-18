@@ -220,6 +220,34 @@ export class CircuitManager {
   }
 
   /**
+   * 批量移动（多选拖拽，Task 7.4）
+   */
+  moveComponents(moves: { id: number; x: number; y: number }[]): void {
+    for (const m of moves) {
+      const comp = this.getComponent(m.id);
+      if (comp) {
+        comp.x = m.x;
+        comp.y = m.y;
+      }
+    }
+    this.triggerUpdate();
+  }
+
+  /**
+   * 批量移动（多选拖拽，Task 7.4）
+   */
+  moveComponents(moves: { id: number; x: number; y: number }[]): void {
+    for (const m of moves) {
+      const comp = this.getComponent(m.id);
+      if (comp) {
+        comp.x = m.x;
+        comp.y = m.y;
+      }
+    }
+    this.triggerUpdate();
+  }
+
+  /**
    * 用外部电路替换当前电路（用于导入）
    *
    * - 重置 selection

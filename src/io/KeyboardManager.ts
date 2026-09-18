@@ -57,6 +57,14 @@ export class KeyboardManager {
         event.preventDefault();
         this.handleRotate();
         break;
+      case 'a':
+      case 'A':
+        // Ctrl+A / Cmd+A：全选
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          this.handleSelectAll();
+        }
+        break;
       // d 键在 keyup 中处理（避免长按重复触发）
     }
   }
@@ -73,14 +81,28 @@ export class KeyboardManager {
 
   /**
    * R 键：旋转当前选中元件 90°
+   * 仅单选 1 个元件时有效
    */
   private handleRotate(): void {
     const sel = this.circuitManager.getSelection();
-    if (!sel || sel.kind !== 'component') return;
-    const newRotation = this.circuitManager.rotateComponent(sel.id, 90);
+    if (!sel || sel.componentIds.length !== 1 || sel.wireIds.length !== 0) return;
+    const newRotation = this.circuitManager.rotateComponent(sel.componentIds[0], 90);
     if (newRotation !== null) {
       this.statusBar.showWarning(`旋转 ${newRotation}°`);
     }
+  }
+
+  /**
+   * Ctrl+A：全选所有元件和电线
+   */
+  private handleSelectAll(): void {
+    const comps = this.circuitManager.getComponents();
+    const wires = this.circuitManager.getWires();
+    this.circuitManager.selectMany(
+      comps.map(c => c.id),
+      wires.map(w => w.id)
+    );
+    this.statusBar.showWarning(`已全选：${comps.length} 个元件、${wires.length} 条连线`);
   }
 
   private handleKeyUp(event: KeyboardEvent): void {

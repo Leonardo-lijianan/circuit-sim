@@ -3,7 +3,7 @@
 import type { Mode, PendingAction, ComponentInstance, PinRef } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
 import { hitTest, hitTestSnap, hitTestPin, hitTestWires } from '../utils/hitTest';
-import { getPinWorldPos } from '../utils/geometry';
+import { getPinWorldPos, getRotatedAABB } from '../utils/geometry';
 
 export class InteractionManager {
   private mode: Mode = 'select';
@@ -12,13 +12,20 @@ export class InteractionManager {
   private onPendingChangeCallbacks: ((pending: PendingAction) => void)[] = [];
   private onPlaceCallback?: (type: string, x: number, y: number) => void;  // ← Task 3.4 新增
 
-  // 拖拽状态
+  // 拖拽状态（支持多选整体拖拽）
   private dragState: {
-    compId: number;
+    components: { id: number; startX: number; startY: number }[];
     mouseStartX: number;
     mouseStartY: number;
-    compStartX: number;
-    compStartY: number;
+    isDragging: boolean;
+  } | null = null;
+
+  // 框选状态（Task 7.4）
+  private marqueeState: {
+    startX: number;
+    startY: number;
+    endX: number;
+    endY: number;
     isDragging: boolean;
   } | null = null;
 
@@ -26,11 +33,13 @@ export class InteractionManager {
   private loader: ComponentLoader | null = null;
   private getComponents: (() => ComponentInstance[]) | null = null;
   private getWires: (() => import('../types').Wire[]) | null = null;
+  private getSelection: (() => import('../types').Selection | null) | null = null;
 
   // Select 模式回调
   private onSelectComponentCallback?: (id: number | null) => void;
   private onSelectWireCallback?: (id: number | null) => void;
-  private onMoveCallback?: (id: number, x: number, y: number) => void;
+  private onSelectManyCallback?: (componentIds: number[], wireIds: number[]) => void;
+  private onMoveCallback?: (moves: { id: number; x: number; y: number }[]) => void;
 
   // Wire 模式状态
   private wireMousePos: { x: number; y: number } | null = null;
@@ -62,6 +71,7 @@ export class InteractionManager {
     // 如果切换到 Select，清理所有待完成操作
     if (newMode === 'select') {
       this.clearPending();
+      this.marqueeState = null;
     }
 
     // 如果从 Place 切换到其他模式，取消待放置状态
@@ -267,24 +277,106 @@ export class InteractionManager {
       const comp = components.find(c => c.id === result.id);
       if (!comp) return;
 
-      this.onSelectComponentCallback?.(comp.id);
+      const sel = this.getSelection ? this.getSelection() : null;
+      const isAlreadySelected = !!sel && sel.componentIds.includes(result.id);
+
+      // 未选中 → 单选它；已选中 → 保持多选不变
+      if (!isAlreadySelected) {
+        this.onSelectComponentCallback?.(result.id);
+      }
+
+      // 拖拽列表：已选中的全部 / 单个
+      const idsToDrag = isAlreadySelected && sel
+        ? [...sel.componentIds]
+        : [result.id];
+
+      const dragComponents = idsToDrag
+        .map(id => components.find(c => c.id === id))
+        .filter((c): c is ComponentInstance => !!c)
+        .map(c => ({ id: c.id, startX: c.x, startY: c.y }));
 
       this.dragState = {
-        compId: comp.id,
+        components: dragComponents,
         mouseStartX: x,
         mouseStartY: y,
-        compStartX: comp.x,
-        compStartY: comp.y,
         isDragging: false,
       };
       return;
     }
 
-    // 2.4 点击空白 → 取消选中
-    this.onSelectComponentCallback?.(null);
+    // 2.3.5 多选 AABB 内点击（即使不是元件本身）→ 拖拽全部选中
+    const selNow = this.getSelection ? this.getSelection() : null;
+    if (selNow && selNow.componentIds.length > 1) {
+      if (this.isPointInSelectionAABB(x, y, selNow, components)) {
+        const dragComponents = selNow.componentIds
+          .map(id => components.find(c => c.id === id))
+          .filter((c): c is ComponentInstance => !!c)
+          .map(c => ({ id: c.id, startX: c.x, startY: c.y }));
+
+        this.dragState = {
+          components: dragComponents,
+          mouseStartX: x,
+          mouseStartY: y,
+          isDragging: false,
+        };
+        return;
+      }
+    }
+
+    // 2.4 点击空白 → 启动框选（未拖动时视为普通点击取消选中）
+    this.marqueeState = {
+      startX: x,
+      startY: y,
+      endX: x,
+      endY: y,
+      isDragging: false,
+    };
+  }
+
+  /**
+   * 判断点是否在多选的最小 AABB 内
+   */
+  private isPointInSelectionAABB(
+    x: number,
+    y: number,
+    sel: import('../types').Selection,
+    components: ComponentInstance[]
+  ): boolean {
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    let found = false;
+
+    for (const id of sel.componentIds) {
+      const comp = components.find(c => c.id === id);
+      if (!comp) continue;
+      const aabb = getRotatedAABB(comp);
+      minX = Math.min(minX, aabb.x);
+      minY = Math.min(minY, aabb.y);
+      maxX = Math.max(maxX, aabb.x + aabb.w);
+      maxY = Math.max(maxY, aabb.y + aabb.h);
+      found = true;
+    }
+
+    if (!found) return false;
+    return x >= minX && x <= maxX && y >= minY && y <= maxY;
   }
 
   private handleSelectMouseMove(x: number, y: number): void {
+    // 框选（优先于拖拽）
+    if (this.marqueeState) {
+      const dx = x - this.marqueeState.startX;
+      const dy = y - this.marqueeState.startY;
+      if (!this.marqueeState.isDragging && Math.sqrt(dx * dx + dy * dy) > 5) {
+        this.marqueeState.isDragging = true;
+      }
+      if (this.marqueeState.isDragging) {
+        this.marqueeState.endX = x;
+        this.marqueeState.endY = y;
+      }
+      return;
+    }
+
+    // 拖拽元件（可多选整体拖拽）
     if (!this.dragState) return;
 
     const dx = x - this.dragState.mouseStartX;
@@ -297,19 +389,80 @@ export class InteractionManager {
     }
 
     if (this.dragState.isDragging) {
-      this.onMoveCallback?.(
-        this.dragState.compId,
-        this.dragState.compStartX + dx,
-        this.dragState.compStartY + dy
-      );
+      const moves = this.dragState.components.map(c => ({
+        id: c.id,
+        x: c.startX + dx,
+        y: c.startY + dy,
+      }));
+      this.onMoveCallback?.(moves);
     }
   }
 
   private handleSelectMouseUp(): void {
-    if (!this.dragState) return;
+    // 框选
+    if (this.marqueeState) {
+      if (this.marqueeState.isDragging) {
+        const box = this.normalizeMarquee();
+        const result = this.computeMarqueeSelection(box.x, box.y, box.w, box.h);
+        this.onSelectManyCallback?.(result.componentIds, result.wireIds);
+      } else {
+        // 普通点击空白 → 取消选中
+        this.onSelectComponentCallback?.(null);
+      }
+      this.marqueeState = null;
+      return;
+    }
 
-    this.dragState = null;
-    this.updateCursor();
+    // 拖拽
+    if (this.dragState) {
+      this.dragState = null;
+      this.updateCursor();
+    }
+  }
+
+  /**
+   * 获取当前框选矩形（供渲染器绘制）
+   */
+  getMarquee(): { x: number; y: number; w: number; h: number } | null {
+    if (!this.marqueeState || !this.marqueeState.isDragging) return null;
+    return this.normalizeMarquee();
+  }
+
+  private normalizeMarquee(): { x: number; y: number; w: number; h: number } {
+    const s = this.marqueeState!;
+    return {
+      x: Math.min(s.startX, s.endX),
+      y: Math.min(s.startY, s.endY),
+      w: Math.abs(s.endX - s.startX),
+      h: Math.abs(s.endY - s.startY),
+    };
+  }
+
+  /**
+   * 计算框选结果（元件完全包含在选框内）
+   */
+  private computeMarqueeSelection(
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ): { componentIds: number[]; wireIds: number[] } {
+    const componentIds: number[] = [];
+    if (!this.getComponents) return { componentIds, wireIds: [] };
+
+    const components = this.getComponents();
+    for (const comp of components) {
+      const aabb = getRotatedAABB(comp);
+      if (
+        aabb.x >= x &&
+        aabb.y >= y &&
+        aabb.x + aabb.w <= x + w &&
+        aabb.y + aabb.h <= y + h
+      ) {
+        componentIds.push(comp.id);
+      }
+    }
+    return { componentIds, wireIds: [] };
   }
 
   /**
@@ -428,11 +581,13 @@ export class InteractionManager {
   setContext(
     loader: ComponentLoader,
     getComponents: () => ComponentInstance[],
-    getWires: () => import('../types').Wire[]
+    getWires: () => import('../types').Wire[],
+    getSelection: () => import('../types').Selection | null
   ): void {
     this.loader = loader;
     this.getComponents = getComponents;
     this.getWires = getWires;
+    this.getSelection = getSelection;
   }
 
   onSelectComponent(callback: (id: number | null) => void): void {
@@ -443,7 +598,14 @@ export class InteractionManager {
     this.onSelectWireCallback = callback;
   }
 
-  onMove(callback: (id: number, x: number, y: number) => void): void {
+  /**
+   * 框选完成回调（Task 7.4）
+   */
+  onSelectMany(callback: (componentIds: number[], wireIds: number[]) => void): void {
+    this.onSelectManyCallback = callback;
+  }
+
+  onMove(callback: (moves: { id: number; x: number; y: number }[]) => void): void {
     this.onMoveCallback = callback;
   }
 

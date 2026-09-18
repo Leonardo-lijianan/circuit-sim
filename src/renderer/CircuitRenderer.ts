@@ -30,6 +30,7 @@ export class CircuitRenderer {
       place?: { type: string; x: number; y: number };
       wire?: { startX: number; startY: number; endX: number; endY: number; snapped: boolean };
       hoverPin?: PinRef;
+      marquee?: { x: number; y: number; w: number; h: number };
     }
   ): void {
     const ctx = this.ctx;
@@ -52,6 +53,8 @@ export class CircuitRenderer {
     if (overlays?.wire) this.drawTempWire(overlays.wire);
     else if (overlays?.hoverPin) this.drawHoverPin(overlays.hoverPin, circuit);
     this.drawOverlay(circuit);
+    if (overlays?.marquee) this.drawMarquee(overlays.marquee);
+    if (overlays?.marquee) this.drawMarquee(overlays.marquee);
 
     ctx.restore();
   }
@@ -253,6 +256,48 @@ export class CircuitRenderer {
   }
 
   /**
+   * 绘制框选矩形（Task 7.4）
+   */
+  private drawMarquee(box: { x: number; y: number; w: number; h: number }): void {
+    const ctx = this.ctx;
+    ctx.save();
+
+    // 半透明填充
+    ctx.fillStyle = 'rgba(137, 180, 250, 0.15)';
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+
+    // 蓝色虚线边框
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+    ctx.setLineDash([]);
+
+    ctx.restore();
+  }
+
+  /**
+   * 绘制框选矩形（Task 7.4）
+   */
+  private drawMarquee(box: { x: number; y: number; w: number; h: number }): void {
+    const ctx = this.ctx;
+    ctx.save();
+
+    // 半透明填充
+    ctx.fillStyle = 'rgba(137, 180, 250, 0.15)';
+    ctx.fillRect(box.x, box.y, box.w, box.h);
+
+    // 蓝色虚线边框
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(box.x, box.y, box.w, box.h);
+    ctx.setLineDash([]);
+
+    ctx.restore();
+  }
+
+  /**
    * 绘制临时连线（Wire 模式）
    */
   private drawTempWire(wire: { startX: number; startY: number; endX: number; endY: number; snapped: boolean }): void {
@@ -327,13 +372,72 @@ export class CircuitRenderer {
     const sel = circuit.selection;
     if (!sel) return;
 
-    if (sel.kind === 'component') {
-      const comp = circuit.components.find(c => c.id === sel.id);
+    // 元件选中
+    if (sel.componentIds.length === 1) {
+      // 单选：单框
+      const comp = circuit.components.find(c => c.id === sel.componentIds[0]);
       if (comp) this.drawSelection(comp);
-    } else if (sel.kind === 'wire') {
-      const wire = circuit.wires.find(w => w.id === sel.id);
+    } else if (sel.componentIds.length > 1) {
+      // 多选：统一 AABB
+      const comps = sel.componentIds
+        .map(id => circuit.components.find(c => c.id === id))
+        .filter((c): c is ComponentInstance => !!c);
+      if (comps.length > 0) this.drawMultiSelection(comps);
+    }
+
+    // 电线选中（可能是多个）
+    for (const wid of sel.wireIds) {
+      const wire = circuit.wires.find(w => w.id === wid);
       if (wire) this.drawWireSelection(wire, circuit.components);
     }
+  }
+
+  /**
+   * 多选：绘制所有选中元件的最小 AABB 虚线框
+   */
+  private drawMultiSelection(comps: ComponentInstance[]): void {
+    const ctx = this.ctx;
+    const pad = 4;
+    const s = 6;
+
+    // 1. 计算最小 AABB
+    let minX = Infinity, minY = Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (const comp of comps) {
+      const aabb = getRotatedAABB(comp);
+      minX = Math.min(minX, aabb.x);
+      minY = Math.min(minY, aabb.y);
+      maxX = Math.max(maxX, aabb.x + aabb.w);
+      maxY = Math.max(maxY, aabb.y + aabb.h);
+    }
+
+    ctx.save();
+
+    // 2. 蓝色虚线框
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(
+      minX - pad,
+      minY - pad,
+      maxX - minX + pad * 2,
+      maxY - minY + pad * 2
+    );
+    ctx.setLineDash([]);
+
+    // 3. 四角锚点
+    ctx.fillStyle = '#89b4fa';
+    const corners = [
+      [minX, minY],
+      [maxX, minY],
+      [minX, maxY],
+      [maxX, maxY],
+    ];
+    for (const [x, y] of corners) {
+      ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    }
+
+    ctx.restore();
   }
 
   /**

@@ -77,7 +77,8 @@ new MouseManager({ canvas, interaction, statusBar, coordinator });
 interaction.setContext(
   loader,
   () => circuitManager.getComponents(),
-  () => circuitManager.getWires()
+  () => circuitManager.getWires(),
+  () => circuitManager.getSelection()
 );
 
 // ============================================================
@@ -230,8 +231,14 @@ interaction.onSelectWire((id) => {
   circuitManager.selectWire(id);
 });
 
-interaction.onMove((id, x, y) => {
-  circuitManager.moveComponent(id, x, y);
+// 框选完成（Task 7.4）
+interaction.onSelectMany((componentIds, wireIds) => {
+  circuitManager.selectMany(componentIds, wireIds);
+});
+
+// 多选整体拖拽（Task 7.4）
+interaction.onMove((moves) => {
+  circuitManager.moveComponents(moves);
 });
 
 interaction.onWireComplete((start, end) => {
@@ -299,9 +306,33 @@ document.getElementById('btnOpen')?.addEventListener('click', async () => {
   }
 });
 
-// 清空按钮
+// 清空按钮（二次确认，Task 7.4）
+
+let pendingClear = false;
+let pendingClearTimer: number | null = null;
 
 document.getElementById('btnClear')?.addEventListener('click', async () => {
+  if (!pendingClear) {
+    // 第一次点击 → 提示
+    pendingClear = true;
+    statusBar.showWarning('再按一次清空');
+    if (pendingClearTimer !== null) clearTimeout(pendingClearTimer);
+    pendingClearTimer = window.setTimeout(() => {
+      pendingClear = false;
+      pendingClearTimer = null;
+      statusBar.clearWarning();
+    }, 3000);
+    return;
+  }
+
+  // 第二次点击 → 执行清空
+  pendingClear = false;
+  if (pendingClearTimer !== null) {
+    clearTimeout(pendingClearTimer);
+    pendingClearTimer = null;
+  }
+  statusBar.clearWarning();
+
   await simClient.stop();
   circuitManager.clearCircuit();
   statusBar.showWarning('已清空');
