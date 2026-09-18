@@ -143,6 +143,7 @@ export interface Wire {
 export interface Circuit {
   components: ComponentInstance[];
   wires: Wire[];
+  selectedId: number | null;
 }
 
 // ============================================================

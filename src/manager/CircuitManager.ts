@@ -32,6 +32,7 @@ export class CircuitManager {
     return {
       components: this.components,
       wires: this.wires,
+      selectedId: this.selectedId,
     };
   }
 

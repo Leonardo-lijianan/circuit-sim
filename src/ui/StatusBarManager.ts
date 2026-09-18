@@ -7,12 +7,49 @@ export class StatusBarManager {
   private wireCountEl: HTMLElement | null;
   private simStatusEl: HTMLElement | null;
   private cursorPosEl: HTMLElement | null;
+  private statusMsgEl: HTMLElement | null;
+  private statusMsgTimer: number | null = null;
 
   constructor() {
     this.compCountEl = document.getElementById('compCount');
     this.wireCountEl = document.getElementById('wireCount');
     this.simStatusEl = document.getElementById('simStatus');
     this.cursorPosEl = document.getElementById('cursorPos');
+    this.statusMsgEl = document.getElementById('statusMsg');
+  }
+
+  /**
+   * 在状态栏显示临时警告（自动消失）
+   */
+  showWarning(msg: string, duration: number = 3000): void {
+    if (!this.statusMsgEl) return;
+
+    this.statusMsgEl.textContent = msg;
+    this.statusMsgEl.classList.add('warning');
+
+    if (this.statusMsgTimer !== null) {
+      clearTimeout(this.statusMsgTimer);
+    }
+    this.statusMsgTimer = window.setTimeout(() => {
+      if (this.statusMsgEl) {
+        this.statusMsgEl.textContent = '';
+        this.statusMsgEl.classList.remove('warning');
+      }
+      this.statusMsgTimer = null;
+    }, duration);
+  }
+
+  /**
+   * 立即清除警告
+   */
+  clearWarning(): void {
+    if (!this.statusMsgEl) return;
+    this.statusMsgEl.textContent = '';
+    this.statusMsgEl.classList.remove('warning');
+    if (this.statusMsgTimer !== null) {
+      clearTimeout(this.statusMsgTimer);
+      this.statusMsgTimer = null;
+    }
   }
 
   updateCircuitStats(circuit: Circuit): void {

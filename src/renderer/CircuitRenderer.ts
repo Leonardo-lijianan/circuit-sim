@@ -31,7 +31,7 @@ export class CircuitRenderer {
     this.drawFixLayers(circuit);
     this.drawFlexLayers(circuit);
     if (preview) this.drawPreview(preview);
-    // 层 4、5 预留 Phase 3
+    this.drawOverlay(circuit);
   }
 
   private drawBackground(width: number, height: number): void {
@@ -174,6 +174,55 @@ export class CircuitRenderer {
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(preview.x - 2, preview.y - 2, w + 4, h + 4);
     ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  /**
+   * 层 5：覆盖层（选中高亮 + 未来引脚热区）
+   */
+  private drawOverlay(circuit: Circuit): void {
+    if (circuit.selectedId === null) return;
+
+    const comp = circuit.components.find(c => c.id === circuit.selectedId);
+    if (!comp) return;
+
+    this.drawSelection(comp);
+  }
+
+  /**
+   * 绘制选中高亮：蓝色虚线框 + 四角锚点
+   */
+  private drawSelection(comp: ComponentInstance): void {
+    const ctx = this.ctx;
+    const pad = 4;
+    const s = 6;
+
+    ctx.save();
+
+    // 1. 蓝色虚线框
+    ctx.strokeStyle = '#89b4fa';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(
+      comp.x - pad,
+      comp.y - pad,
+      comp.w + pad * 2,
+      comp.h + pad * 2
+    );
+    ctx.setLineDash([]);
+
+    // 2. 四角锚点
+    ctx.fillStyle = '#89b4fa';
+    const corners = [
+      [comp.x, comp.y],
+      [comp.x + comp.w, comp.y],
+      [comp.x, comp.y + comp.h],
+      [comp.x + comp.w, comp.y + comp.h],
+    ];
+    for (const [x, y] of corners) {
+      ctx.fillRect(x - s / 2, y - s / 2, s, s);
+    }
+
     ctx.restore();
   }
 

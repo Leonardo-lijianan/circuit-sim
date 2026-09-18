@@ -68,9 +68,13 @@ const coordinator = new RenderCoordinator({
 // ============================================================
 
 new ToolbarManager(interaction);
-new KeyboardManager(interaction);
 const panel = new PanelManager(loader);
 const statusBar = new StatusBarManager();
+new KeyboardManager({
+  interaction,
+  circuitManager,
+  statusBar,
+});
 
 // ============================================================
 // 5. 鼠标事件管理
