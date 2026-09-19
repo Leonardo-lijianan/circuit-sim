@@ -7,12 +7,16 @@
     "core:default",
     "dialog:allow-open",
     "dialog:allow-save",
-    "fs:allow-read",
     {
-      "identifier": "fs:allow-read",
+      "identifier": "fs:allow-read-text-file",
       "allow": [
-        { "path": "$APP/**/comps/*" },
-        { "path": "$APP/**/comps/*/*" }
+        { "path": "$RESOURCE/resources/comps/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        { "path": "$RESOURCE/resources/comps" }
       ]
     }
   ]

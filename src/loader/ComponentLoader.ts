@@ -1,5 +1,9 @@
 // src/loader/ComponentLoader.ts
 
+import { readDir, readTextFile } from '@tauri-apps/plugin-fs';
+import { resolveResource } from '@tauri-apps/api/path';
+import { convertFileSrc } from '@tauri-apps/api/core';
+
 import type {
   ComponentDefinition,
   FlexUnitCache,
@@ -19,25 +23,44 @@ export class ComponentLoader {
     offsetY: number;
   }>();
 
+  /**
+   * comps 根目录的绝对路径（启动时解析）
+   */
+  private compsRoot: string = '';
+
   async loadAll(): Promise<void> {
     console.log('📦 Phase 1: 开始加载元件注册表...');
 
-    const metaModules = import.meta.glob('/src/assets/comps/*/meta.json', {
-      eager: true,
-      query: '?raw',
-      import: 'default'
-    });
+    // 1. 解析资源根目录
+    try {
+      this.compsRoot = await resolveResource('resources/comps');
+      console.log(`📂 comps 根目录: ${this.compsRoot}`);
+    } catch (err) {
+      console.error('❌ 无法解析 resources/comps 目录:', err);
+      return;
+    }
 
-    const paths = Object.keys(metaModules);
-    console.log(`📁 发现 ${paths.length} 个元件定义文件`);
+    // 2. 读取目录列表
+    let entries;
+    try {
+      entries = await readDir(this.compsRoot);
+    } catch (err) {
+      console.error('❌ 无法读取 comps 目录:', err);
+      return;
+    }
 
-    for (const path of paths) {
+    const dirs = entries.filter(e => e.isDirectory);
+    console.log(`📁 发现 ${dirs.length} 个元件目录`);
+
+    // 3. 逐个加载
+    for (const dir of dirs) {
       try {
-        const content = metaModules[path] as string;
-        const def: ComponentDefinition = JSON.parse(content);
+        const metaPath = `${this.compsRoot}/${dir.name}/meta.json`;
+        const metaContent = await readTextFile(metaPath);
+        const def: ComponentDefinition = JSON.parse(metaContent);
         await this.loadComponent(def);
       } catch (err) {
-        console.error(`❌ 加载 ${path} 失败:`, err);
+        console.error(`❌ 加载 ${dir.name} 失败:`, err);
       }
     }
 
@@ -50,8 +73,9 @@ export class ComponentLoader {
       return;
     }
 
-    const basePath = `/src/assets/comps/${def.name}`;
+    const basePath = `${this.compsRoot}/${def.name}`;
 
+    // 1. 加载 fix.svg
     const fixPath = `${basePath}/fix.svg`;
     const fixImg = await this.loadImage(fixPath);
     if (!fixImg) {
@@ -60,6 +84,7 @@ export class ComponentLoader {
     }
     this.imageCache.set(fixPath, fixImg);
 
+    // 2. 加载 flex 单元
     if (def.flex) {
       for (const [unitId, unitDef] of Object.entries(def.flex.units)) {
         const flexPath = `${basePath}/${unitDef.file}`;
@@ -73,13 +98,7 @@ export class ComponentLoader {
 
   private async loadFlexUnit(path: string, unitId: string): Promise<void> {
     try {
-      const response = await fetch(path);
-      if (!response.ok) {
-        console.warn(`⚠️ 加载 flex 单元失败 (HTTP ${response.status}): ${path}`);
-        return;
-      }
-      const svgText = await response.text();
-
+      const svgText = await readTextFile(path);
       const parsed = parseSVG(svgText);
       const { commands, viewBox } = parsed;
 
@@ -99,22 +118,25 @@ export class ComponentLoader {
     }
   }
 
-  private loadImage(path: string): Promise<HTMLImageElement | null> {
+  /**
+   * 加载图片（通过 convertFileSrc 走 asset:// 协议）
+   */
+  private loadImage(absPath: string): Promise<HTMLImageElement | null> {
     return new Promise((resolve) => {
-      if (this.imageCache.has(path)) {
-        resolve(this.imageCache.get(path)!);
+      if (this.imageCache.has(absPath)) {
+        resolve(this.imageCache.get(absPath)!);
         return;
       }
       const img = new Image();
       img.onload = () => {
-        this.imageCache.set(path, img);
+        this.imageCache.set(absPath, img);
         resolve(img);
       };
       img.onerror = () => {
-        console.warn(`⚠️ 图片加载失败: ${path}`);
+        console.warn(`⚠️ 图片加载失败: ${absPath}`);
         resolve(null);
       };
-      img.src = path;
+      img.src = convertFileSrc(absPath);
     });
   }
 
@@ -135,14 +157,14 @@ export class ComponentLoader {
   }
 
   getFixImage(type: string): HTMLImageElement | undefined {
-    const path = `/src/assets/comps/${type}/fix.svg`;
+    const path = `${this.compsRoot}/${type}/fix.svg`;
     return this.imageCache.get(path);
   }
 
   getFlexUnit(type: string, unitId: string): FlexUnitCache | undefined {
     const def = this.registry.get(type);
     if (!def?.flex?.units?.[unitId]) return undefined;
-    const path = `/src/assets/comps/${type}/${def.flex.units[unitId].file}`;
+    const path = `${this.compsRoot}/${type}/${def.flex.units[unitId].file}`;
     const cached = this.flexCache.get(path);
     if (!cached) return undefined;
     return {
@@ -158,7 +180,7 @@ export class ComponentLoader {
     if (!def?.flex) return undefined;
     const result = new Map<string, FlexUnitCache>();
     for (const [unitId, unitDef] of Object.entries(def.flex.units)) {
-      const path = `/src/assets/comps/${type}/${unitDef.file}`;
+      const path = `${this.compsRoot}/${type}/${unitDef.file}`;
       const cached = this.flexCache.get(path);
       if (cached) {
         result.set(unitId, {

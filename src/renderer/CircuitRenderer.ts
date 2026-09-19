@@ -54,7 +54,6 @@ export class CircuitRenderer {
     else if (overlays?.hoverPin) this.drawHoverPin(overlays.hoverPin, circuit);
     this.drawOverlay(circuit);
     if (overlays?.marquee) this.drawMarquee(overlays.marquee);
-    if (overlays?.marquee) this.drawMarquee(overlays.marquee);
 
     ctx.restore();
   }
@@ -252,27 +251,6 @@ export class CircuitRenderer {
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(preview.x - 2, preview.y - 2, w + 4, h + 4);
     ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  /**
-   * 绘制框选矩形（Task 7.4）
-   */
-  private drawMarquee(box: { x: number; y: number; w: number; h: number }): void {
-    const ctx = this.ctx;
-    ctx.save();
-
-    // 半透明填充
-    ctx.fillStyle = 'rgba(137, 180, 250, 0.15)';
-    ctx.fillRect(box.x, box.y, box.w, box.h);
-
-    // 蓝色虚线边框
-    ctx.strokeStyle = '#89b4fa';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.strokeRect(box.x, box.y, box.w, box.h);
-    ctx.setLineDash([]);
-
     ctx.restore();
   }
 

@@ -75,8 +75,8 @@ export class KeyboardManager {
    */
   private handleSpaceToggle(): void {
     const sel = this.circuitManager.getSelection();
-    if (!sel || sel.kind !== 'component') return;
-    this.circuitManager.toggleComponent(sel.id);
+    if (!sel || sel.componentIds.length !== 1 || sel.wireIds.length !== 0) return;
+    this.circuitManager.toggleComponent(sel.componentIds[0]);
   }
 
   /**
@@ -132,8 +132,8 @@ export class KeyboardManager {
       return;
     }
 
-    // 唯一标识（kind + id）
-    const selKey = `${selection.kind}:${selection.id}`;
+    // 唯一标识（多选版）
+    const selKey = `c:${selection.componentIds.join(',')};w:${selection.wireIds.join(',')}`;
 
     // 情况2：第一次按 d，或者选中的对象变了
     if (this.pendingDeleteKey !== selKey) {

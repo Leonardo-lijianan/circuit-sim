@@ -102,6 +102,7 @@ export class RenderCoordinator {
       place?: { type: string; x: number; y: number };
       wire?: { startX: number; startY: number; endX: number; endY: number; snapped: boolean };
       hoverPin?: { componentId: number; pinId: string };
+      marquee?: { x: number; y: number; w: number; h: number };
     } = {};
 
     // Place 模式预览
