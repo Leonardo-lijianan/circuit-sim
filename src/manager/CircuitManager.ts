@@ -2,6 +2,7 @@
 
 import type { ComponentInstance, Wire, Circuit, PinRef, Selection } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
+import { snapToGrid } from '../utils/grid';
 
 export class CircuitManager {
   private components: ComponentInstance[] = [];
@@ -175,8 +176,8 @@ export class CircuitManager {
     const comp: ComponentInstance = {
       id: this.nextId++,
       type,
-      x,
-      y,
+      x: snapToGrid(x),
+      y: snapToGrid(y),
       w,
       h,
       rotation: 0,
@@ -220,14 +221,25 @@ export class CircuitManager {
   }
 
   /**
-   * 批量移动（多选拖拽，Task 7.4）
+   * 批量移动（多选拖拽，Task 7.4 + 网格吸附 Task 8.1）
+   *
+   * 策略：以第一个元件为基准量化位移量，其他元件跟随同样的位移
+   *      这样既能吸附到网格，又保持多选元件的相对位置
    */
   moveComponents(moves: { id: number; x: number; y: number }[]): void {
+    if (moves.length === 0) return;
+
+    const first = moves[0];
+    const snappedX = snapToGrid(first.x);
+    const snappedY = snapToGrid(first.y);
+    const dx = snappedX - first.x;
+    const dy = snappedY - first.y;
+
     for (const m of moves) {
       const comp = this.getComponent(m.id);
       if (comp) {
-        comp.x = m.x;
-        comp.y = m.y;
+        comp.x = m.x + dx;
+        comp.y = m.y + dy;
       }
     }
     this.triggerUpdate();
@@ -240,6 +252,12 @@ export class CircuitManager {
    * - 重算 nextId / nextWireId（避免与现有 id 冲突）
    */
   loadCircuit(circuit: Circuit): void {
+    // 加载时量化所有元件位置到网格（保证一致性）
+    for (const comp of circuit.components) {
+      comp.x = snapToGrid(comp.x);
+      comp.y = snapToGrid(comp.y);
+    }
+
     this.components = circuit.components;
     this.wires = circuit.wires;
     this.selection = null;

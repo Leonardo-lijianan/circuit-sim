@@ -4,6 +4,7 @@ import type { Mode, PendingAction, ComponentInstance, PinRef } from '../types';
 import type { ComponentLoader } from '../loader/ComponentLoader';
 import { hitTest, hitTestSnap, hitTestPin, hitTestWires } from '../utils/hitTest';
 import { getPinWorldPos, getRotatedAABB } from '../utils/geometry';
+import { snapToGrid } from '../utils/grid';
 
 export class InteractionManager {
   private mode: Mode = 'select';
@@ -479,10 +480,10 @@ export class InteractionManager {
 
     // 通过回调通知外部创建元件
     if (this.onPlaceCallback) {
-      // 计算元件左上角位置（居中放置）
+      // 计算元件左上角位置（居中放置）并吸附到网格
       const w = 60;
       const h = 40;
-      this.onPlaceCallback(type, x - w / 2, y - h / 2);
+      this.onPlaceCallback(type, snapToGrid(x - w / 2), snapToGrid(y - h / 2));
     }
 
     // 放置后清理 pending 并回到 Select 模式

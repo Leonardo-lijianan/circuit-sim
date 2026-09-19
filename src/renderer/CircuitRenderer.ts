@@ -5,6 +5,7 @@ import type { Circuit, ComponentInstance, FlexUnitCache, PinRef } from '../types
 import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
 import { getPinWorldPos, getRotatedAABB, getWirePath } from '../utils/geometry';
+import { GRID_SIZE } from '../utils/grid';
 
 export class CircuitRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -60,11 +61,6 @@ export class CircuitRenderer {
 
   private drawGrid(width: number, height: number, viewport: Viewport): void {
     const ctx = this.ctx;
-    ctx.strokeStyle = '#313244';
-    // 线宽按 scale 反缩放，保证视觉粗细恒定
-    ctx.lineWidth = 0.5 / viewport.scale;
-
-    const gridSize = 20;
 
     // 屏幕可视区域对应的逻辑坐标范围
     const logicLeft = (0 - viewport.offsetX) / viewport.scale;
@@ -72,24 +68,51 @@ export class CircuitRenderer {
     const logicRight = (width - viewport.offsetX) / viewport.scale;
     const logicBottom = (height - viewport.offsetY) / viewport.scale;
 
-    // 对齐到网格边界
-    const startX = Math.floor(logicLeft / gridSize) * gridSize;
-    const startY = Math.floor(logicTop / gridSize) * gridSize;
-    const endX = Math.ceil(logicRight / gridSize) * gridSize;
-    const endY = Math.ceil(logicBottom / gridSize) * gridSize;
+    // 缩得很远时隐藏细网格，避免屏幕上一片灰
+    const drawMinor = viewport.scale >= 0.4;
 
-    for (let x = startX; x <= endX; x += gridSize) {
+    // ---------- 1. 细网格（GRID_SIZE = 20px）----------
+    if (drawMinor) {
+      const startX = Math.floor(logicLeft / GRID_SIZE) * GRID_SIZE;
+      const startY = Math.floor(logicTop / GRID_SIZE) * GRID_SIZE;
+      const endX = Math.ceil(logicRight / GRID_SIZE) * GRID_SIZE;
+      const endY = Math.ceil(logicBottom / GRID_SIZE) * GRID_SIZE;
+
+      ctx.strokeStyle = '#313244';
+      ctx.lineWidth = 0.5 / viewport.scale;
+
       ctx.beginPath();
-      ctx.moveTo(x, startY);
-      ctx.lineTo(x, endY);
+      for (let x = startX; x <= endX; x += GRID_SIZE) {
+        ctx.moveTo(x, startY);
+        ctx.lineTo(x, endY);
+      }
+      for (let y = startY; y <= endY; y += GRID_SIZE) {
+        ctx.moveTo(startX, y);
+        ctx.lineTo(endX, y);
+      }
       ctx.stroke();
     }
-    for (let y = startY; y <= endY; y += gridSize) {
-      ctx.beginPath();
-      ctx.moveTo(startX, y);
-      ctx.lineTo(endX, y);
-      ctx.stroke();
+
+    // ---------- 2. 粗网格（5 × GRID_SIZE = 100px）----------
+    const MAJOR = GRID_SIZE * 5;
+    const majorStartX = Math.floor(logicLeft / MAJOR) * MAJOR;
+    const majorStartY = Math.floor(logicTop / MAJOR) * MAJOR;
+    const majorEndX = Math.ceil(logicRight / MAJOR) * MAJOR;
+    const majorEndY = Math.ceil(logicBottom / MAJOR) * MAJOR;
+
+    ctx.strokeStyle = '#45475a';
+    ctx.lineWidth = 1 / viewport.scale;
+
+    ctx.beginPath();
+    for (let x = majorStartX; x <= majorEndX; x += MAJOR) {
+      ctx.moveTo(x, majorStartY);
+      ctx.lineTo(x, majorEndY);
     }
+    for (let y = majorStartY; y <= majorEndY; y += MAJOR) {
+      ctx.moveTo(majorStartX, y);
+      ctx.lineTo(majorEndX, y);
+    }
+    ctx.stroke();
   }
 
   private drawWires(circuit: Circuit): void {
@@ -375,8 +398,8 @@ export class CircuitRenderer {
    */
   private drawMultiSelection(comps: ComponentInstance[]): void {
     const ctx = this.ctx;
-    const pad = 4;
-    const s = 6;
+    const pad = 0;   // 统一 AABB 也贴合边界
+    const s = 3;
 
     // 1. 计算最小 AABB
     let minX = Infinity, minY = Infinity;
@@ -393,7 +416,7 @@ export class CircuitRenderer {
 
     // 2. 蓝色虚线框
     ctx.strokeStyle = '#89b4fa';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 1.25;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(
       minX - pad,
@@ -462,8 +485,8 @@ export class CircuitRenderer {
    */
   private drawSelection(comp: ComponentInstance): void {
     const ctx = this.ctx;
-    const pad = 4;
-    const s = 6;
+    const pad = 0;   // 虚线框正好压在 AABB 边界（= 网格线）上
+    const s = 3;
 
     // 用旋转后的 AABB
     const aabb = getRotatedAABB(comp);
@@ -472,7 +495,7 @@ export class CircuitRenderer {
 
     // 1. 蓝色虚线框
     ctx.strokeStyle = '#89b4fa';
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 1.25;
     ctx.setLineDash([4, 4]);
     ctx.strokeRect(
       aabb.x - pad,
