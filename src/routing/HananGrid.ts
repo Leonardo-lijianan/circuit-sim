@@ -50,7 +50,8 @@ export function buildHananGrid(
   end: Point,
   obstacles: Rect[],
   inflate: number = 5,
-  routingGrid: number = 10
+  routingGrid: number = 10,
+  expand: number = 100
 ): HananGrid {
   const xSet = new Set<number>();
   const ySet = new Set<number>();
@@ -69,18 +70,22 @@ export function buildHananGrid(
     ySet.add(r.y + r.h + inflate);
   }
 
-  // 起终点连线的外包矩形区域加密
+  // 起终点连线的外包矩形区域加密，并向四周扩展 expand 距离
   //
-  // 原因：只有起终点 + 障碍物边界作为坐标时，格点太稀疏。
-  // 比如起 (0,0) 终 (100,50)，xs={0,100} ys={0,50}，
-  // 唯一可能的 L 形路径最后一段方向是 S —— 若终点要求最后一段为 E
-  // （引脚朝西、从西侧进入），就找不到合法路径。
+  // 原因 1（格点太稀疏）：
+  //   只有起终点 + 障碍物边界作为坐标时，格点太少。
+  //   比如起 (0,0) 终 (100,50)，xs={0,100} ys={0,50}，找不到合法中间拐点。
   //
-  // 加密后，xs 包含 10/20/.../90，提供充足的中间拐点。
-  const bboxMinX = Math.min(start.x, end.x);
-  const bboxMaxX = Math.max(start.x, end.x);
-  const bboxMinY = Math.min(start.y, end.y);
-  const bboxMaxY = Math.max(start.y, end.y);
+  // 原因 2（起点方向被 bbox 卡死）：
+  //   若起点恰好在 bbox 的最右端且方向为 E，向右的格点不在集合里，
+  //   第一步就被卡住，A* 无解。必须向外扩展一段空间，
+  //   让引脚可以"背离元件"走几步。
+  //
+  // 扩展 100px（= 10 个格点）足够容纳"从引脚出发 → 绕过相邻障碍物"。
+  const bboxMinX = Math.min(start.x, end.x) - expand;
+  const bboxMaxX = Math.max(start.x, end.x) + expand;
+  const bboxMinY = Math.min(start.y, end.y) - expand;
+  const bboxMaxY = Math.max(start.y, end.y) + expand;
 
   for (
     let x = Math.ceil(bboxMinX / routingGrid) * routingGrid;

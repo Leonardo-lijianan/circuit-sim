@@ -95,6 +95,8 @@ export interface RouteParams {
   obstacles: RectWithId[];
   /** 安全间距（默认 5px） */
   inflate?: number;
+  /** Hanan Grid 向外扩展距离（默认 100px），见 buildHananGrid */
+  expand?: number;
 }
 
 /**
@@ -112,7 +114,7 @@ export function routeOrthogonal(params: RouteParams): Point[] | null {
   const {
     start, startPinDir, startCompId,
     end, endPinDir, endCompId,
-    obstacles, inflate = 5,
+    obstacles, inflate = 5, expand = 100,
   } = params;
 
   // 1. 排除起终点元件
@@ -120,8 +122,8 @@ export function routeOrthogonal(params: RouteParams): Point[] | null {
     r => r.id !== startCompId && r.id !== endCompId
   );
 
-  // 2. 构造 Hanan Grid
-  const grid = buildHananGrid(start, end, blocked, inflate);
+  // 2. 构造 Hanan Grid（向外扩展，避免起点被 bbox 边界卡死）
+  const grid = buildHananGrid(start, end, blocked, inflate, 10, expand);
   const numX = grid.xs.length;
   const numY = grid.ys.length;
 
@@ -197,9 +199,13 @@ export function routeOrthogonal(params: RouteParams): Point[] | null {
 
   const open = new MinHeap<{ state: number; f: number }>((a, b) => a.f - b.f);
 
-  // 进入终点的方向 = 引脚朝向的反方向
-  // 例：引脚朝西（endPinDir='W'），最后一段必须从西往东（'E'）进入
-  const requiredInDir = OPPOSITE[endPinDir];
+  // 注意：endPinDir 不强制作为"进入方向"约束。
+  //
+  // 原因：终点引脚可能被相邻元件挡住唯一合法入口（如水平对齐时，
+  // 从引脚正对面进入的唯一路径必须穿过障碍物内部）。此时应允许从
+  // 任意方向绕到终点，只要最后一段不穿过障碍物即可。
+  // 严格方向约束会导致本可绕行的路径被误判为"无解"。
+  void endPinDir;
 
   // 起点状态：入方向初值设为 startPinDir（让第一段"直行"无惩罚）
   const startState = encode(startXIdx, startYIdx, DIR_INDEX[startPinDir]);
@@ -249,8 +255,8 @@ export function routeOrthogonal(params: RouteParams): Point[] | null {
       const isEnd = (nxi === endXIdx && nyi === endYIdx);
 
       if (isEnd) {
-        // 进入终点方向必须符合引脚朝向
-        if (outDir !== requiredInDir) continue;
+        // 终点方向不强制：只需最后一段不穿过障碍物（终点本身允许在边界上）
+        if (segmentBlocked(x, y, nx, ny)) continue;
       } else {
         // 边穿越检查（比节点检查更严格）
         if (segmentBlocked(x, y, nx, ny)) continue;

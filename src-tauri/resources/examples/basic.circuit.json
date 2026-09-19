@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "1.0",
+  "components": [
+    {
+      "id": 1,
+      "type": "battery",
+      "x": 240,
+      "y": 200,
+      "w": 60,
+      "h": 40,
+      "rotation": 0,
+      "params": { "voltage": 5 },
+      "state": "default"
+    },
+    {
+      "id": 2,
+      "type": "led",
+      "x": 100,
+      "y": 380,
+      "w": 60,
+      "h": 40,
+      "rotation": 0,
+      "params": { "forward_voltage": 1.8 },
+      "state": "off"
+    },
+    {
+      "id": 3,
+      "type": "resistor",
+      "x": 100,
+      "y": 200,
+      "w": 60,
+      "h": 40,
+      "rotation": 0,
+      "params": { "resistance": 1000 },
+      "state": "default"
+    }
+  ],
+  "wires": [
+    {
+      "id": 1,
+      "startComponentId": 1,
+      "startPinId": "pos",
+      "endComponentId": 2,
+      "endPinId": "a"
+    },
+    {
+      "id": 2,
+      "startComponentId": 2,
+      "startPinId": "k",
+      "endComponentId": 3,
+      "endPinId": "p1"
+    },
+    {
+      "id": 3,
+      "startComponentId": 3,
+      "startPinId": "p2",
+      "endComponentId": 1,
+      "endPinId": "neg"
+    }
+  ]
+}

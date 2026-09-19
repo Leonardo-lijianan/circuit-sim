@@ -191,12 +191,23 @@ export function hitTestWires(
   // 逆序遍历，上层优先
   for (let i = wires.length - 1; i >= 0; i--) {
     const wire = wires[i];
-    const start = getPinWorldPosByRef(wire.startComponentId, wire.startPinId, components, loader);
-    const end = getPinWorldPosByRef(wire.endComponentId, wire.endPinId, components, loader);
-    if (!start || !end) continue;
 
-    // 用正交路径（折线）计算命中
-    const path = getWirePath(start, end);
+    // 关键：优先使用渲染时算好的路径缓存（wire.path），
+    // 保证命中判定与视觉呈现完全一致。
+    //
+    // 当 wire.path 缺失（未渲染过、或刚 triggerUpdate 清空）时，
+    // 回退到 getWirePath —— 这与 CircuitRenderer 的路由失败兜底策略一致。
+    let path: Point[];
+
+    if (wire.path && wire.path.length >= 2) {
+      path = wire.path;
+    } else {
+      const start = getPinWorldPosByRef(wire.startComponentId, wire.startPinId, components, loader);
+      const end = getPinWorldPosByRef(wire.endComponentId, wire.endPinId, components, loader);
+      if (!start || !end) continue;
+      path = getWirePath(start, end);
+    }
+
     const dist = pointToPolylineDistance(x, y, path);
     if (dist <= threshold) return wire.id;
   }

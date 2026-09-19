@@ -205,6 +205,57 @@ describe('routeOrthogonal - 避障', () => {
     expect(path).toBeNull();
   });
 
+  it('起点恰在 bbox 边界、且方向朝外 → 不卡死', () => {
+    // 场景：起点 (200, 0) 方向 E，终点 (0, 100) 方向 W
+    // 起点在连线的 x 最大值处 —— 旧版 bbox 加密没覆盖 x=210 等右侧格点，
+    // A* 第一步就被卡死返回 null。修复后应该能正常路由。
+    const path = routeOrthogonal({
+      start: { x: 200, y: 0 },
+      startPinDir: 'E',
+      startCompId: 1,
+      end: { x: 0, y: 100 },
+      endPinDir: 'W',
+      endCompId: 2,
+      obstacles: [],
+      inflate: 5,
+    });
+    expect(path).not.toBeNull();
+    assertOrthogonal(path!);
+    // 第一段必须背离元件（向右）
+    expect(path![1].x).toBeGreaterThan(path![0].x);
+    expect(path![1].y).toBe(path![0].y);
+    // 终点正确到达
+    expect(path![path!.length - 1]).toEqual({ x: 0, y: 100 });
+  });
+
+  it('终点被相邻元件挡住正对入口 → 从侧面绕行', () => {
+    // 场景：起点 (0,0) 朝 E，终点 (200,0) 朝 W
+    // 中间有障碍物 (100,-20,60,40)，膨胀 5 → x∈[95,165], y∈[-25,15]
+    // 从左边进入终点的"直线"要穿过障碍物；
+    // 只能从上方或下方绕过去进入终点
+    const obstacles: RectWithId[] = [
+      { id: 99, x: 100, y: -20, w: 60, h: 40 },
+    ];
+    const path = routeOrthogonal({
+      start: { x: 0, y: 0 },
+      startPinDir: 'E',
+      startCompId: 1,
+      end: { x: 200, y: 0 },
+      endPinDir: 'W',
+      endCompId: 2,
+      obstacles,
+      inflate: 5,
+    });
+    expect(path).not.toBeNull();
+    assertOrthogonal(path!);
+    assertAvoidsObstacles(path!, obstacles, 5);
+    assertNoUTurn(path!);
+    // 必须绕行：至少 2 个拐弯
+    expect(countBends(path!)).toBeGreaterThanOrEqual(2);
+    // 终点仍然是 (200, 0)
+    expect(path![path!.length - 1]).toEqual({ x: 200, y: 0 });
+  });
+
   it('起终点所在元件不作为障碍物', () => {
     // 起点元件 AABB 覆盖起点位置，终点元件 AABB 覆盖终点位置
     const obstacles: RectWithId[] = [
@@ -265,5 +316,64 @@ describe('routeOrthogonal - 拐弯惩罚', () => {
     assertAvoidsObstacles(path!, obstacles, 5);
     // 最优解应该 ≤ 4 拐弯
     expect(countBends(path!)).toBeLessThanOrEqual(4);
+  });
+});
+
+describe('routeOrthogonal - 安全间距', () => {
+  it('路径与元件边界保持至少 inflate 距离', () => {
+    const inflate = 12;
+    const obstacles: RectWithId[] = [
+      { id: 99, x: 100, y: 0, w: 60, h: 100 },
+    ];
+    const path = routeOrthogonal({
+      start: { x: 0, y: 50 },
+      startPinDir: 'E',
+      startCompId: 1,
+      end: { x: 300, y: 50 },
+      endPinDir: 'W',
+      endCompId: 2,
+      obstacles,
+      inflate,
+    });
+    expect(path).not.toBeNull();
+
+    // 采样路径上每个点，检查到障碍物的距离
+    for (let i = 1; i < path!.length; i++) {
+      const p0 = path![i - 1];
+      const p1 = path![i];
+      const len = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+      const steps = Math.max(2, Math.ceil(len / 5));
+      for (let s = 0; s <= steps; s++) {
+        const t = s / steps;
+        const x = p0.x + (p1.x - p0.x) * t;
+        const y = p0.y + (p1.y - p0.y) * t;
+        const r = obstacles[0];
+        // 严格在膨胀区外（允许边界相等，因为格点就在边界上）
+        const inside =
+          x > r.x - inflate && x < r.x + r.w + inflate &&
+          y > r.y - inflate && y < r.y + r.h + inflate;
+        expect(inside).toBe(false);
+      }
+    }
+  });
+
+  it('窄通道（元件间距 < 2*inflate）时可能无解 → 返回 null 由调用方回退', () => {
+    // 上下两个元件，通道高度 15px，inflate=12 → 各自膨胀后通道为负 → 无解
+    const obstacles: RectWithId[] = [
+      { id: 99, x: 0, y: -30, w: 200, h: 30 },   // 上墙
+      { id: 98, x: 0, y: 15, w: 200, h: 30 },    // 下墙
+    ];
+    const path = routeOrthogonal({
+      start: { x: 50, y: 7 },
+      startPinDir: 'E',
+      startCompId: 1,
+      end: { x: 150, y: 7 },
+      endPinDir: 'W',
+      endCompId: 2,
+      obstacles,
+      inflate: 12,
+    });
+    // 通道被膨胀后堵死，应返回 null
+    expect(path).toBeNull();
   });
 });

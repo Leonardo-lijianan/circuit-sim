@@ -409,6 +409,11 @@ export class CircuitManager {
   }
 
   private triggerUpdate(): void {
+    // 清空路由缓存（任何电路变动都可能改变避让条件）
+    for (const w of this.wires) {
+      w.path = undefined;
+    }
+
     if (this.onUpdateCallback) {
       this.onUpdateCallback(this.getCircuit());
     }

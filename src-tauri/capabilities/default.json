@@ -10,13 +10,15 @@
     {
       "identifier": "fs:allow-read-text-file",
       "allow": [
-        { "path": "$RESOURCE/resources/comps/**" }
+        { "path": "$RESOURCE/resources/comps/**" },
+        { "path": "$RESOURCE/resources/examples/**" }
       ]
     },
     {
       "identifier": "fs:allow-read-dir",
       "allow": [
-        { "path": "$RESOURCE/resources/comps" }
+        { "path": "$RESOURCE/resources/comps" },
+        { "path": "$RESOURCE/resources/examples" }
       ]
     }
   ]

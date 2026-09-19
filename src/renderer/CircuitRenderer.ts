@@ -4,8 +4,11 @@ import type { ComponentLoader } from '../loader/ComponentLoader';
 import type { Circuit, ComponentInstance, FlexUnitCache, PinRef } from '../types';
 import type { Viewport } from '../utils/coordinates';
 import type { SVGCommand } from '../loader/SVGParser';
-import { getPinWorldPos, getRotatedAABB, getWirePath } from '../utils/geometry';
+import { getPinWorldPos, getRotatedAABB, getWirePath, getPinDirection } from '../utils/geometry';
 import { GRID_SIZE } from '../utils/grid';
+import { routeOrthogonal } from '../routing';
+import type { Point } from '../utils/geometry';
+import type { RectWithId } from '../routing';
 
 export class CircuitRenderer {
   private ctx: CanvasRenderingContext2D;
@@ -122,8 +125,7 @@ export class CircuitRenderer {
       const end = this.getPinWorldPos(wire.endComponentId, wire.endPinId, circuit.components);
       if (!start || !end) continue;
 
-      // 正交路径（Z 字或直线）
-      const path = getWirePath(start, end);
+      const path = this.getWirePathCached(wire, circuit, start, end);
 
       ctx.strokeStyle = '#a6adc8';
       ctx.lineWidth = 2;
@@ -144,6 +146,78 @@ export class CircuitRenderer {
       ctx.arc(end.x, end.y, 4, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  /**
+   * 获取电线的路由路径（带缓存）
+   *
+   * 优先用正交避障路由；无解或异常时回退到 Z 字。
+   * 计算结果写回 wire.path，下次直接命中缓存。
+   */
+  private getWirePathCached(
+    wire: import('../types').Wire,
+    circuit: Circuit,
+    start: Point,
+    end: Point
+  ): Point[] {
+    if (wire.path && wire.path.length >= 2) {
+      return wire.path;
+    }
+
+    const path = this.computeRoute(wire, circuit, start, end);
+    wire.path = path;
+    return path;
+  }
+
+  private computeRoute(
+    wire: import('../types').Wire,
+    circuit: Circuit,
+    start: Point,
+    end: Point
+  ): Point[] {
+    // 1. 查起终点元件 + 定义 + 引脚
+    const startComp = circuit.components.find(c => c.id === wire.startComponentId);
+    const endComp = circuit.components.find(c => c.id === wire.endComponentId);
+    if (!startComp || !endComp) return getWirePath(start, end);
+
+    const startDef = this.loader.getDefinition(startComp.type);
+    const endDef = this.loader.getDefinition(endComp.type);
+    if (!startDef || !endDef) return getWirePath(start, end);
+
+    const startPin = startDef.pins.find(p => p.id === wire.startPinId);
+    const endPin = endDef.pins.find(p => p.id === wire.endPinId);
+    if (!startPin || !endPin) return getWirePath(start, end);
+
+    const startDir = getPinDirection(startComp, startPin);
+    const endDir = getPinDirection(endComp, endPin);
+
+    // 2. 组装障碍物（所有元件的旋转后 AABB）
+    const obstacles: RectWithId[] = circuit.components.map(c => {
+      const aabb = getRotatedAABB(c);
+      return { id: c.id, x: aabb.x, y: aabb.y, w: aabb.w, h: aabb.h };
+    });
+
+    // 3. 正交避障路由
+    try {
+      const route = routeOrthogonal({
+        start,
+        startPinDir: startDir,
+        startCompId: wire.startComponentId,
+        end,
+        endPinDir: endDir,
+        endCompId: wire.endComponentId,
+        obstacles,
+        // 安全间距：电线与元件边界保持 12px，避免视觉上"贴边"。
+        // 太小（<8）会贴着元件，太大（>20）在窄通道中易无解。
+        inflate: 12,
+      });
+      if (route && route.length >= 2) return route;
+    } catch (err) {
+      console.warn('⚠️ 路由异常，回退到 Z 字:', err);
+    }
+
+    // 4. 兜底：旧 Z 字
+    return getWirePath(start, end);
   }
 
   private drawOneFix(comp: ComponentInstance): void {
@@ -389,7 +463,7 @@ export class CircuitRenderer {
     // 电线选中（可能是多个）
     for (const wid of sel.wireIds) {
       const wire = circuit.wires.find(w => w.id === wid);
-      if (wire) this.drawWireSelection(wire, circuit.components);
+      if (wire) this.drawWireSelection(wire, circuit);
     }
   }
 
@@ -444,10 +518,12 @@ export class CircuitRenderer {
   /**
    * 绘制电线选中高亮：线条整体变蓝，粗细不变
    * 与元件选中的蓝色虚线框语义一致（蓝色 = 选中）
+   *
+   * 使用与 drawWires 相同的路由缓存，避免选中/未选中显示不同的路径。
    */
-  private drawWireSelection(wire: import('../types').Wire, components: ComponentInstance[]): void {
-    const start = this.getPinWorldPos(wire.startComponentId, wire.startPinId, components);
-    const end = this.getPinWorldPos(wire.endComponentId, wire.endPinId, components);
+  private drawWireSelection(wire: import('../types').Wire, circuit: Circuit): void {
+    const start = this.getPinWorldPos(wire.startComponentId, wire.startPinId, circuit.components);
+    const end = this.getPinWorldPos(wire.endComponentId, wire.endPinId, circuit.components);
     if (!start || !end) return;
 
     const ctx = this.ctx;
@@ -455,8 +531,8 @@ export class CircuitRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // 正交路径
-    const path = getWirePath(start, end);
+    // 与 drawWires 一致的缓存路由
+    const path = this.getWirePathCached(wire, circuit, start, end);
 
     // 线条变蓝（粗细、端点大小与原线完全一致）
     ctx.strokeStyle = '#89b4fa';

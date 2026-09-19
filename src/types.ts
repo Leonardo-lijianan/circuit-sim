@@ -148,6 +148,14 @@ export interface Wire {
   startPinId: string;
   endComponentId: number;
   endPinId: string;
+  /**
+   * 路由缓存（Task 8.3，懒计算）
+   *
+   * - 由 CircuitRenderer 计算并写入
+   * - CircuitManager.triggerUpdate() 时清空（任何电路变动都可能影响避障条件）
+   * - undefined 表示尚未计算或已失效
+   */
+  path?: { x: number; y: number }[];
 }
 
 export interface Circuit {

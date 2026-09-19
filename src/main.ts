@@ -23,6 +23,8 @@ import { evaluateTransition } from './sim/stateTransition';
 import { serialize, deserialize } from './sim/CircuitSerializer';
 import { save as saveDialog, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
+import { readTextFile } from '@tauri-apps/plugin-fs';
+import { resolveResource } from '@tauri-apps/api/path';
 import type { Circuit, SolverInput } from './types';
 
 console.log('🚀 电路仿真系统启动');
@@ -364,47 +366,26 @@ document.getElementById('btnSimSecondary')?.addEventListener('click', async () =
 });
 
 // ============================================================
-// 9. 构造测试电路：5V 电池 + LED + 1000Ω 电阻（闭合回路）
+// 9. 加载默认电路（resources/examples/basic.circuit.json）
 // ============================================================
 
-// 电池
-const battery = circuitManager.addComponent('battery', 100, 200);
-if (battery) {
-  battery.params.voltage = 5.0;
+async function loadDefaultCircuit(): Promise<void> {
+  try {
+    const examplesRoot = await resolveResource('resources/examples');
+    const path = `${examplesRoot}/basic.circuit.json`;
+    const content = await readTextFile(path);
+
+    const { circuit, warnings } = deserialize(content, loader);
+    circuitManager.loadCircuit(circuit);
+
+    for (const w of warnings) console.warn('⚠️', w);
+    console.log(`📂 已加载默认电路: ${circuit.components.length} 元件, ${circuit.wires.length} 连线`);
+  } catch (err) {
+    console.warn('⚠️ 加载默认电路失败，启动为空画布:', err);
+  }
 }
 
-// LED
-const led = circuitManager.addComponent('led', 250, 200);
-
-// 电阻
-const resistor = circuitManager.addComponent('resistor', 400, 200);
-if (resistor) {
-  resistor.params.resistance = 1000;
-}
-
-// 连线：battery.pos → led.a
-if (battery && led) {
-  circuitManager.addWire(
-    { componentId: battery.id, pinId: 'pos' },
-    { componentId: led.id, pinId: 'a' }
-  );
-}
-
-// 连线：led.k → resistor.p1
-if (led && resistor) {
-  circuitManager.addWire(
-    { componentId: led.id, pinId: 'k' },
-    { componentId: resistor.id, pinId: 'p1' }
-  );
-}
-
-// 连线：resistor.p2 → battery.neg
-if (resistor && battery) {
-  circuitManager.addWire(
-    { componentId: resistor.id, pinId: 'p2' },
-    { componentId: battery.id, pinId: 'neg' }
-  );
-}
+await loadDefaultCircuit();
 
 // ============================================================
 // 10. 首次渲染
@@ -427,4 +408,4 @@ coordinator.render();
 (window as any).__hitTestSnap = hitTestSnap;
 (window as any).__hitTest = hitTest;
 
-console.log('✅ 系统就绪：Phase 5 Task 5.6a（核心联调）');
+console.log('✅ 系统就绪：Phase 8（正交避障路由）');
